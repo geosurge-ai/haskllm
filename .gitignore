@@ -1,0 +1,44 @@
+# macOS
+.DS_Store
+
+# LaTeX / TeX build artifacts
+*.aux
+*.log
+*.out
+*.toc
+*.synctex.gz
+*.fls
+*.fdb_latexmk
+*.bbl
+*.blg
+*.bcf
+*.run.xml
+*.ptb
+texput.log
+
+# lhs2TeX outputs for TemporalPearson
+TemporalPearson.tex
+TemporalPearson.pdf
+
+# GHC binary for TemporalPearson
+TemporalPearson
+
+# Nix
+result
+result-*
+.direnv/
+.devenv/
+.nix-*
+
+# Haskell (Cabal/Stack)
+dist-newstyle/
+.stack-work/
+cabal.project.local
+cabal.project.local~
+cabal.sandbox.config
+cabal.sandbox.config.lock
+*.hi
+*.o
+
+# Tests
+test-run/
