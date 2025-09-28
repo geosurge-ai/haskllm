@@ -2,7 +2,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wall #-}
 
-module HaskLLM.CardPandoc
+module CardPandoc
   ( Body,
     cardValueToBody,
     -- \^ Value -> Either Text Body

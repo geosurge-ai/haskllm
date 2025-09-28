@@ -12,7 +12,6 @@ build-type: Simple
 library
   exposed-modules:
     HaskLLM
-    HaskLLM.CardPandoc
     HaskLLM.OpenAI.GPT5
     HaskLLM.PandocChat
     HaskLLM.VLLM.QweN2_5
@@ -50,6 +49,11 @@ library
 test-suite haskllm-test
   type: exitcode-stdio-1.0
   main-is: Main.hs
+  other-modules:
+    CardAtomic
+    CardPandoc
+    LogUtils
+
   hs-source-dirs: test
   build-depends:
     aeson,

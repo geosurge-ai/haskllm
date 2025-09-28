@@ -4,6 +4,11 @@
 
 module Main (main) where
 
+import CardAtomic (cardSpec)
+import CardPandoc
+  ( bodyToCardValue,
+    cardValueToBody,
+  )
 import Control.Monad (replicateM)
 import Data.Aeson
 import Data.Aeson.KeyMap qualified as KM
@@ -19,8 +24,6 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Time (defaultTimeLocale, formatTime, getCurrentTime)
 import Data.Vector qualified as V
--- Your OpenAI GPT-5 client/typeclass.
-
 import GHC.Base (when)
 import HaskLLM
   ( ChatMessage (..),
@@ -28,16 +31,17 @@ import HaskLLM
     JSONSchemaSpec (..),
     LLMFormatChat (..),
   )
-import HaskLLM.CardPandoc
-  ( bodyToCardValue,
-    cardValueToBody,
-  )
 import HaskLLM.OpenAI.GPT5
   ( OpenAI (..),
   )
 import HaskLLM.PandocChat
   ( applyEditsToBodies,
     respondPandocChatWithTokens,
+  )
+import LogUtils
+  ( logDebug,
+    logInfo,
+    withLogSection,
   )
 import System.Directory (createDirectoryIfMissing, listDirectory)
 import System.Environment (lookupEnv)
@@ -180,39 +184,6 @@ themePool =
 --------------------------------------------------------------------------------
 -- JSON Schemas
 
-cardAtomicSchema :: Value
-cardAtomicSchema =
-  object
-    [ "$schema" .= ("https://json-schema.org/draft/2020-12/schema" :: Text),
-      "title" .= ("CardAtomic" :: Text),
-      "type" .= ("object" :: Text),
-      "additionalProperties" .= False, -- Required by OpenAI structured output
-      "properties"
-        .= object
-          [ "name" .= object ["type" .= ("string" :: Text)],
-            "manaCost" .= object ["type" .= ("string" :: Text)],
-            "manaValue" .= object ["type" .= ("number" :: Text)],
-            "colors" .= object ["type" .= ("array" :: Text), "items" .= object ["type" .= ("string" :: Text)]],
-            "colorIdentity" .= object ["type" .= ("array" :: Text), "items" .= object ["type" .= ("string" :: Text)]],
-            "colorIndicator" .= object ["type" .= ("array" :: Text), "items" .= object ["type" .= ("string" :: Text)]],
-            "types" .= object ["type" .= ("array" :: Text), "items" .= object ["type" .= ("string" :: Text)]],
-            "supertypes" .= object ["type" .= ("array" :: Text), "items" .= object ["type" .= ("string" :: Text)]],
-            "subtypes" .= object ["type" .= ("array" :: Text), "items" .= object ["type" .= ("string" :: Text)]],
-            "layout" .= object ["type" .= ("string" :: Text)],
-            "side" .= object ["type" .= ("string" :: Text)],
-            "text" .= object ["type" .= ("string" :: Text)],
-            "keywords" .= object ["type" .= ("array" :: Text), "items" .= object ["type" .= ("string" :: Text)]],
-            "power" .= object ["type" .= ("string" :: Text)],
-            "toughness" .= object ["type" .= ("string" :: Text)],
-            "loyalty" .= object ["type" .= ("string" :: Text)],
-            "defense" .= object ["type" .= ("string" :: Text)]
-          ],
-      "required" .= (["name", "manaValue", "types", "text"] :: [Text])
-    ]
-
-cardSpec :: JSONSchemaSpec
-cardSpec = JSONSchemaSpec {schemaName = "CardAtomic", schema = cardAtomicSchema, strict = False}
-
 wordPickSchema :: [Text] -> JSONSchemaSpec
 wordPickSchema candidates =
   let sch =
@@ -297,7 +268,7 @@ writeCardLogs timestamp cardName cardJson fullLog = do
   -- Write full interaction log
   LBS.writeFile fullFile (encode fullLog)
 
-  putStrLn $ "=== LOGGED: " <> baseName
+  logInfo $ "Logged card generation: " <> T.pack baseName
 
 --------------------------------------------------------------------------------
 -- Utilities
@@ -715,25 +686,23 @@ testPandocChatEdits creds = do
       let fullPath = roboDir </> pick
       (cardName, _, cardV, originalContext) <- loadCardFromFull fullPath
 
-      putStrLn $ "Selected file: " <> pick
-      putStrLn $ "Testing card modification for: " <> T.unpack cardName
-      putStrLn $ "Original context: " <> show originalContext
+      logInfo $ "Selected file: " <> T.pack pick
+      logInfo $ "Testing card modification for: " <> cardName
+      logDebug $ "Original context: " <> T.pack (show originalContext)
 
-      putStrLn "=== ORIGINAL CARD JSON ==="
-      putStrLn $ T.unpack $ TE.decodeUtf8 $ LBS.toStrict $ encode cardV
-      putStrLn "=========================="
+      withLogSection "ORIGINAL CARD JSON" $ do
+        logDebug $ TE.decodeUtf8 $ LBS.toStrict $ encode cardV
 
       -- Convert the CARD JSON to individual field blocks for surgical editing
       fieldBodies <- case cardValueToBody cardV of
         Left e -> fail (T.unpack e)
         Right [DefinitionList items] -> do
-          putStrLn $ "Converted card to " <> show (length items) <> " individual field blocks"
+          logInfo $ "Converted card to " <> T.pack (show (length items)) <> " individual field blocks"
           -- Create separate bodies for each field to encourage surgical editing
           let fieldBlocks = map (\(term, defs) -> [DefinitionList [(term, defs)]]) items
-          putStrLn "=== INDIVIDUAL FIELD STRUCTURES ==="
-          forM_ (zip [1 :: Int ..] fieldBlocks) $ \(i, fieldBody) -> do
-            putStrLn $ "Field " <> show i <> ": " <> show fieldBody
-          putStrLn "=================================="
+          withLogSection "INDIVIDUAL FIELD STRUCTURES" $ do
+            forM_ (zip [1 :: Int ..] fieldBlocks) $ \(i, fieldBody) -> do
+              logDebug $ "Field " <> T.pack (show i) <> ": " <> T.pack (show fieldBody)
           return fieldBlocks
         Right other -> fail $ "Expected single DefinitionList, got: " <> show other
 
@@ -767,8 +736,8 @@ testPandocChatEdits creds = do
                 ("user", userIntent)
               ]
 
-      putStrLn $ "Calling respondPandocChatWithTokens with " <> show (length fieldBodies) <> " individual field attachments..."
-      putStrLn $ "Using max tokens: " <> show maxTokensForComplexEdits
+      logInfo $ "Calling respondPandocChatWithTokens with " <> T.pack (show (length fieldBodies)) <> " individual field attachments"
+      logInfo $ "Using max tokens: " <> T.pack (show maxTokensForComplexEdits)
 
       -- Ask for patches on individual fields with increased token limit
       (respMap, mPatches) <- respondPandocChatWithTokens OpenAI creds pandocModelName prompts (Just fieldBodies) (Just maxTokensForComplexEdits)
@@ -776,40 +745,37 @@ testPandocChatEdits creds = do
         Nothing -> fail "Expected patches for attachment"
         Just ps -> pure ps
 
-      putStrLn "=== PATCH OPERATIONS DEBUG ==="
-      putStrLn $ "Received " <> show (length patches) <> " patch lists"
-      forM_ (zip [1 :: Int ..] patches) $ \(i, patchList) -> do
-        putStrLn $ "Patch list " <> show i <> " has " <> show (length patchList) <> " operations:"
-        if null patchList
-          then putStrLn "  (no operations - empty list)"
-          else forM_ (zip [1 :: Int ..] patchList) $ \(j, op) -> do
-            putStrLn $ "  Operation " <> show j <> ": " <> show op
-      putStrLn "=== END PATCH DEBUG ==="
+      withLogSection "PATCH OPERATIONS DEBUG" $ do
+        logDebug $ "Received " <> T.pack (show (length patches)) <> " patch lists"
+        forM_ (zip [1 :: Int ..] patches) $ \(i, patchList) -> do
+          logDebug $ "Patch list " <> T.pack (show i) <> " has " <> T.pack (show (length patchList)) <> " operations:"
+          if null patchList
+            then logDebug "  (no operations - empty list)"
+            else forM_ (zip [1 :: Int ..] patchList) $ \(j, op) -> do
+              logDebug $ "  Operation " <> T.pack (show j) <> ": " <> T.pack (show op)
 
       -- Apply patches to the individual field bodies.
       editedFieldBodies <- case applyEditsToBodies fieldBodies patches of
         Left e -> fail (T.unpack e)
         Right bodies -> pure bodies
 
-      putStrLn $ "Successfully applied patches to " <> show (length editedFieldBodies) <> " field structures"
+      logInfo $ "Successfully applied patches to " <> T.pack (show (length editedFieldBodies)) <> " field structures"
 
       -- Reconstruct the complete DefinitionList from edited field bodies
       let reconstructedItems = concatMap extractDefinitionItems editedFieldBodies
           reconstructedBody = [DefinitionList reconstructedItems]
 
-      putStrLn "=== RECONSTRUCTED DEFINITIONLIST ==="
-      putStrLn $ show reconstructedBody
-      putStrLn "==================================="
+      withLogSection "RECONSTRUCTED DEFINITIONLIST" $ do
+        logDebug $ T.pack (show reconstructedBody)
 
       -- Convert the reconstructed Body back to card JSON.
       cardV' <- case bodyToCardValue reconstructedBody of
         Left e -> fail (T.unpack e)
         Right v -> pure v
 
-      putStrLn "Successfully converted edited structure back to JSON"
-      putStrLn "=== MODIFIED CARD JSON ==="
-      putStrLn $ T.unpack $ TE.decodeUtf8 $ LBS.toStrict $ encode cardV'
-      putStrLn "=========================="
+      logInfo "Successfully converted edited structure back to JSON"
+      withLogSection "MODIFIED CARD JSON" $ do
+        logDebug $ TE.decodeUtf8 $ LBS.toStrict $ encode cardV'
 
       -- Save: write 'modified.card.json' + assistant markdown
       let outDir = "roborosewater" </> "gpt5" </> "edit" </> takeBaseName fullPath
@@ -833,7 +799,7 @@ testPandocChatEdits creds = do
                 ]
             )
         )
-      putStrLn ("Saved: " <> outFile)
+      logInfo $ "Saved: " <> T.pack outFile
 
 --------------------------------------------------------------------------------
 -- HSpec
@@ -866,33 +832,17 @@ main = hspec $ do
               threshold = ceiling (0.66 * fromIntegral totalQuestions :: Double)
 
           -- Print a concise summary to aid debugging if it fails.
-          putStrLn "----- Summary -----"
-          putStrLn $ "Iterations: " <> show iterations
-          putStrLn $ "Total questions: " <> show totalQuestions
-          putStrLn $ "Total correct:   " <> show totalCorrect
-          putStrLn $ "Required (>=):   " <> show threshold
-          putStrLn "Per-iteration breakdown (T=Theme, A=Archetype, S=Strength):"
+          withLogSection "Test Summary" $ do
+            logInfo $ "Iterations: " <> T.pack (show iterations)
+            logInfo $ "Total questions: " <> T.pack (show totalQuestions)
+            logInfo $ "Total correct: " <> T.pack (show totalCorrect)
+            logInfo $ "Required (>=): " <> T.pack (show threshold)
+            logInfo "Per-iteration breakdown (T=Theme, A=Archetype, S=Strength):"
           forM_ (zip [(1 :: Int) ..] outcomes) $ \(i, o) -> do
-            putStrLn $
-              unlines
-                [ "  #" <> show i <> ":",
-                  "    Name:     " <> T.unpack (cardName o),
-                  "    Theme*    "
-                    <> T.unpack (themeWord o)
-                    <> " | Pred: "
-                    <> T.unpack (predThemeWord o)
-                    <> verdict (isThemeCorrect o),
-                  "    Arche*    "
-                    <> T.unpack (targetArchetype o)
-                    <> " | Pred: "
-                    <> T.unpack (predArchetype o)
-                    <> verdict (isArchetypeCorrect o),
-                  "    Strength* "
-                    <> show (targetStrength o)
-                    <> " | Pred: "
-                    <> show (predStrength o)
-                    <> verdict (isStrengthCorrect o)
-                ]
+            logInfo $ "  #" <> T.pack (show i) <> ": " <> cardName o
+            logDebug $ "    Theme: " <> themeWord o <> " | Pred: " <> predThemeWord o <> T.pack (verdict (isThemeCorrect o))
+            logDebug $ "    Archetype: " <> targetArchetype o <> " | Pred: " <> predArchetype o <> T.pack (verdict (isArchetypeCorrect o))
+            logDebug $ "    Strength: " <> T.pack (show (targetStrength o)) <> " | Pred: " <> T.pack (show (predStrength o)) <> T.pack (verdict (isStrengthCorrect o))
           totalCorrect `shouldSatisfy` (>= threshold)
 
   describe "PandocChat edits the CARD (not the markdown wrapper)" $ do
