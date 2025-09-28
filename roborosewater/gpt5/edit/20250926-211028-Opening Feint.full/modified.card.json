@@ -1,0 +1,179 @@
+{
+    "assistant_markdown": "Rationale: - Converted the card to a creature by changing its type to\nCreature while preserving its UR spell–copying gambit theme and scry\npayoff. - The abilities function as battlefield static/triggered\nabilities on a creature without further rules changes. - Renamed to keep\nthe “gambit” flavor without using the theme word directly.\n",
+    "card_name": "Opening Feint",
+    "modified_card_json": {
+        "colorIdentity": [
+            "U",
+            "R"
+        ],
+        "colors": [
+            "U",
+            "R"
+        ],
+        "keywords": [
+            "Scry"
+        ],
+        "layout": "normal",
+        "manaCost": "{1}{U}{R}",
+        "manaValue": 3,
+        "name": "Spellbait Trickster",
+        "side": "a",
+        "text": "Once each turn, when you cast an instant or sorcery spell, you may have target opponent gain control of target nonland permanent you control. If you do, copy that spell. You may choose new targets for the copy.\nWhenever a permanent you control becomes controlled by an opponent, scry 1.",
+        "types": [
+            "Creature"
+        ]
+    },
+    "num_field_edits": 10,
+    "patches": [
+        [],
+        [],
+        [],
+        [],
+        [],
+        [
+            {
+                "block": {
+                    "c": [
+                        [
+                            [
+                                {
+                                    "c": "manaValue",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            {
+                                                "c": "3.0",
+                                                "t": "Str"
+                                            }
+                                        ],
+                                        "t": "Para"
+                                    }
+                                ]
+                            ]
+                        ]
+                    ],
+                    "t": "DefinitionList"
+                },
+                "focus": {
+                    "index": 0
+                },
+                "op": "replace"
+            }
+        ],
+        [
+            {
+                "block": {
+                    "c": [
+                        [
+                            [
+                                {
+                                    "c": "name",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            {
+                                                "c": "Spellbait Trickster",
+                                                "t": "Str"
+                                            }
+                                        ],
+                                        "t": "Para"
+                                    }
+                                ]
+                            ]
+                        ]
+                    ],
+                    "t": "DefinitionList"
+                },
+                "focus": {
+                    "index": 0
+                },
+                "op": "replace"
+            }
+        ],
+        [],
+        [
+            {
+                "block": {
+                    "c": [
+                        [
+                            [
+                                {
+                                    "c": "text",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            {
+                                                "c": "Once each turn, when you cast an instant or sorcery spell, you may have target opponent gain control of target nonland permanent you control. If you do, copy that spell. You may choose new targets for the copy.\nWhenever a permanent you control becomes controlled by an opponent, scry 1.",
+                                                "t": "Str"
+                                            }
+                                        ],
+                                        "t": "Para"
+                                    }
+                                ]
+                            ]
+                        ]
+                    ],
+                    "t": "DefinitionList"
+                },
+                "focus": {
+                    "index": 0
+                },
+                "op": "replace"
+            }
+        ],
+        [
+            {
+                "block": {
+                    "c": [
+                        [
+                            [
+                                {
+                                    "c": "types",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            [
+                                                {
+                                                    "c": [
+                                                        {
+                                                            "c": "Creature",
+                                                            "t": "Str"
+                                                        }
+                                                    ],
+                                                    "t": "Para"
+                                                }
+                                            ]
+                                        ],
+                                        "t": "BulletList"
+                                    }
+                                ]
+                            ]
+                        ]
+                    ],
+                    "t": "DefinitionList"
+                },
+                "focus": {
+                    "index": 0
+                },
+                "op": "replace"
+            }
+        ]
+    ],
+    "source": "20250926-211028-Opening Feint.full"
+}

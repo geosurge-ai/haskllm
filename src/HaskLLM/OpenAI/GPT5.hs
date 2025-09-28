@@ -77,7 +77,7 @@ instance LLMFormatChat OpenAI where
                   ("Content-Type", "application/json")
                 ],
               requestBody = RequestBodyLBS (encode body),
-              responseTimeout = responseTimeoutMicro (900 * 1000000)  -- 15 minutes for GPT-5 reasoning
+              responseTimeout = responseTimeoutMicro (900 * 1000000) -- 15 minutes for GPT-5 reasoning
             }
 
     resp <- httpLbs req manager
@@ -120,7 +120,7 @@ instance LLMFormatChat OpenAI where
                   ("Content-Type", "application/json")
                 ],
               requestBody = RequestBodyLBS (encode body),
-              responseTimeout = responseTimeoutMicro (900 * 1000000)  -- 15 minutes for GPT-5 reasoning  -- 5 minutes for GPT-5 reasoning
+              responseTimeout = responseTimeoutMicro (900 * 1000000) -- 15 minutes for GPT-5 reasoning  -- 5 minutes for GPT-5 reasoning
             }
 
     resp <- httpLbs req manager
@@ -136,7 +136,7 @@ instance LLMFormatChat OpenAI where
 
     case eitherDecode (LBS.fromStrict $ TE.encodeUtf8 txt) :: Either String Value of
       Right v -> pure v
-      Left e -> fail ("OpenAI: schema-enforced output was not valid JSON: " <> e)
+      Left e -> fail ("OpenAI: schema-enforced output was not valid JSON: " <> e <> "\nRaw response text: " <> T.unpack txt)
 
 --------------------------------------------------------------------------------
 -- Helpers
@@ -148,10 +148,11 @@ required k m = case M.lookup k m of
 
 -- Convert ChatMessage to JSON Value for API request
 chatMessageToValue :: ChatMessage -> Value
-chatMessageToValue (ChatMessage role content) = object
-  [ "role" .= role
-  , "content" .= content
-  ]
+chatMessageToValue (ChatMessage role content) =
+  object
+    [ "role" .= role,
+      "content" .= content
+    ]
 
 -- OpenAI "Responses API" extraction:
 -- Prefer `output_text`; else concatenate `output[].content[].text`.

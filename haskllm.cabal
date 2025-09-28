@@ -1,4 +1,4 @@
-cabal-version: 3.14
+cabal-version: 3.8
 name: haskllm
 version: 0.1.0.0
 synopsis: Haskell LLM client library
@@ -33,7 +33,7 @@ library
     pandoc-types,
     scientific,
     text,
-    vector
+    vector,
 
   default-language: GHC2021
   ghc-options:
@@ -70,7 +70,7 @@ test-suite haskllm-test
     scientific,
     text,
     time,
-    vector
+    vector,
 
   default-language: GHC2021
   ghc-options:

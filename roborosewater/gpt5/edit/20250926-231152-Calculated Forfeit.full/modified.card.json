@@ -1,1 +1,334 @@
-{"assistant_markdown":"Edits made\n\n- Changed the card from an Instant to a Creature (types: Creature).\n- Gave it a subtype (Wizard) and added power/toughness (1/1).\n- Converted the instant's modal counter text into a triggered ETB\n  ability so the choices remain meaningful when the card is a creature.\n\nRationale\n\nKeeping the original modal options preserves the card’s design intent.\nMaking it an enter-the-battlefield triggered ability mirrors how the\ninstant’s one-shot effect would behave when the card is a permanent (the\nability goes on the stack when the creature enters). A 1/1 for {U} is a\nsimple, low-cost body that doesn't overshadow the counter ability.\n\nIf you prefer a different subtype, a different P/T, or an activated\nability (e.g., tap to choose one), I can adjust accordingly.\n","card_name":"Calculated Forfeit","modified_card_json":{"colorIdentity":["U"],"colors":["U"],"keywords":[],"layout":"normal","manaCost":"{U}","manaValue":1,"name":"Calculated Forfeit","power":"1","subtypes":["Wizard"],"supertypes":[],"text":"When Calculated Forfeit enters the battlefield, choose one —\n• Counter target noncreature spell unless its controller pays {2}.\n• Counter target noncreature spell. Its controller draws a card.","toughness":"1","types":["Creature"]},"patches":[[{"block":{"c":[[[{"c":"colorIdentity","t":"Str"}],[[{"c":[[{"c":[{"c":"U","t":"Str"}],"t":"Para"}]],"t":"BulletList"}]]],[[{"c":"colors","t":"Str"}],[[{"c":[[{"c":[{"c":"U","t":"Str"}],"t":"Para"}]],"t":"BulletList"}]]],[[{"c":"keywords","t":"Str"}],[[{"c":[],"t":"BulletList"}]]],[[{"c":"layout","t":"Str"}],[[{"c":[{"c":"normal","t":"Str"}],"t":"Para"}]]],[[{"c":"manaCost","t":"Str"}],[[{"c":[{"c":"{U}","t":"Str"}],"t":"Para"}]]],[[{"c":"manaValue","t":"Str"}],[[{"c":[{"c":"1.0","t":"Str"}],"t":"Para"}]]],[[{"c":"name","t":"Str"}],[[{"c":[{"c":"Calculated Forfeit","t":"Str"}],"t":"Para"}]]],[[{"c":"subtypes","t":"Str"}],[[{"c":[[{"c":[{"c":"Wizard","t":"Str"}],"t":"Para"}]],"t":"BulletList"}]]],[[{"c":"supertypes","t":"Str"}],[[{"c":[],"t":"BulletList"}]]],[[{"c":"text","t":"Str"}],[[{"c":[{"c":"When Calculated Forfeit enters the battlefield, choose one —\n• Counter target noncreature spell unless its controller pays {2}.\n• Counter target noncreature spell. Its controller draws a card.","t":"Str"}],"t":"Para"}]]],[[{"c":"types","t":"Str"}],[[{"c":[[{"c":[{"c":"Creature","t":"Str"}],"t":"Para"}]],"t":"BulletList"}]]],[[{"c":"power","t":"Str"}],[[{"c":[{"c":"1","t":"Str"}],"t":"Para"}]]],[[{"c":"toughness","t":"Str"}],[[{"c":[{"c":"1","t":"Str"}],"t":"Para"}]]]],"t":"DefinitionList"},"focus":{"index":0},"op":"replace"}]],"source":"20250926-231152-Calculated Forfeit.full"}
+{
+    "assistant_markdown": "Edits made\n\n- Changed the card from an Instant to a Creature (types: Creature).\n- Gave it a subtype (Wizard) and added power/toughness (1/1).\n- Converted the instant's modal counter text into a triggered ETB\n  ability so the choices remain meaningful when the card is a creature.\n\nRationale\n\nKeeping the original modal options preserves the card’s design intent.\nMaking it an enter-the-battlefield triggered ability mirrors how the\ninstant’s one-shot effect would behave when the card is a permanent (the\nability goes on the stack when the creature enters). A 1/1 for {U} is a\nsimple, low-cost body that doesn't overshadow the counter ability.\n\nIf you prefer a different subtype, a different P/T, or an activated\nability (e.g., tap to choose one), I can adjust accordingly.\n",
+    "card_name": "Calculated Forfeit",
+    "modified_card_json": {
+        "colorIdentity": [
+            "U"
+        ],
+        "colors": [
+            "U"
+        ],
+        "keywords": [],
+        "layout": "normal",
+        "manaCost": "{U}",
+        "manaValue": 1,
+        "name": "Calculated Forfeit",
+        "power": "1",
+        "subtypes": [
+            "Wizard"
+        ],
+        "supertypes": [],
+        "text": "When Calculated Forfeit enters the battlefield, choose one —\n• Counter target noncreature spell unless its controller pays {2}.\n• Counter target noncreature spell. Its controller draws a card.",
+        "toughness": "1",
+        "types": [
+            "Creature"
+        ]
+    },
+    "patches": [
+        [
+            {
+                "block": {
+                    "c": [
+                        [
+                            [
+                                {
+                                    "c": "colorIdentity",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            [
+                                                {
+                                                    "c": [
+                                                        {
+                                                            "c": "U",
+                                                            "t": "Str"
+                                                        }
+                                                    ],
+                                                    "t": "Para"
+                                                }
+                                            ]
+                                        ],
+                                        "t": "BulletList"
+                                    }
+                                ]
+                            ]
+                        ],
+                        [
+                            [
+                                {
+                                    "c": "colors",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            [
+                                                {
+                                                    "c": [
+                                                        {
+                                                            "c": "U",
+                                                            "t": "Str"
+                                                        }
+                                                    ],
+                                                    "t": "Para"
+                                                }
+                                            ]
+                                        ],
+                                        "t": "BulletList"
+                                    }
+                                ]
+                            ]
+                        ],
+                        [
+                            [
+                                {
+                                    "c": "keywords",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [],
+                                        "t": "BulletList"
+                                    }
+                                ]
+                            ]
+                        ],
+                        [
+                            [
+                                {
+                                    "c": "layout",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            {
+                                                "c": "normal",
+                                                "t": "Str"
+                                            }
+                                        ],
+                                        "t": "Para"
+                                    }
+                                ]
+                            ]
+                        ],
+                        [
+                            [
+                                {
+                                    "c": "manaCost",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            {
+                                                "c": "{U}",
+                                                "t": "Str"
+                                            }
+                                        ],
+                                        "t": "Para"
+                                    }
+                                ]
+                            ]
+                        ],
+                        [
+                            [
+                                {
+                                    "c": "manaValue",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            {
+                                                "c": "1.0",
+                                                "t": "Str"
+                                            }
+                                        ],
+                                        "t": "Para"
+                                    }
+                                ]
+                            ]
+                        ],
+                        [
+                            [
+                                {
+                                    "c": "name",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            {
+                                                "c": "Calculated Forfeit",
+                                                "t": "Str"
+                                            }
+                                        ],
+                                        "t": "Para"
+                                    }
+                                ]
+                            ]
+                        ],
+                        [
+                            [
+                                {
+                                    "c": "subtypes",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            [
+                                                {
+                                                    "c": [
+                                                        {
+                                                            "c": "Wizard",
+                                                            "t": "Str"
+                                                        }
+                                                    ],
+                                                    "t": "Para"
+                                                }
+                                            ]
+                                        ],
+                                        "t": "BulletList"
+                                    }
+                                ]
+                            ]
+                        ],
+                        [
+                            [
+                                {
+                                    "c": "supertypes",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [],
+                                        "t": "BulletList"
+                                    }
+                                ]
+                            ]
+                        ],
+                        [
+                            [
+                                {
+                                    "c": "text",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            {
+                                                "c": "When Calculated Forfeit enters the battlefield, choose one —\n• Counter target noncreature spell unless its controller pays {2}.\n• Counter target noncreature spell. Its controller draws a card.",
+                                                "t": "Str"
+                                            }
+                                        ],
+                                        "t": "Para"
+                                    }
+                                ]
+                            ]
+                        ],
+                        [
+                            [
+                                {
+                                    "c": "types",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            [
+                                                {
+                                                    "c": [
+                                                        {
+                                                            "c": "Creature",
+                                                            "t": "Str"
+                                                        }
+                                                    ],
+                                                    "t": "Para"
+                                                }
+                                            ]
+                                        ],
+                                        "t": "BulletList"
+                                    }
+                                ]
+                            ]
+                        ],
+                        [
+                            [
+                                {
+                                    "c": "power",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            {
+                                                "c": "1",
+                                                "t": "Str"
+                                            }
+                                        ],
+                                        "t": "Para"
+                                    }
+                                ]
+                            ]
+                        ],
+                        [
+                            [
+                                {
+                                    "c": "toughness",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            {
+                                                "c": "1",
+                                                "t": "Str"
+                                            }
+                                        ],
+                                        "t": "Para"
+                                    }
+                                ]
+                            ]
+                        ]
+                    ],
+                    "t": "DefinitionList"
+                },
+                "focus": {
+                    "index": 0
+                },
+                "op": "replace"
+            }
+        ]
+    ],
+    "source": "20250926-231152-Calculated Forfeit.full"
+}

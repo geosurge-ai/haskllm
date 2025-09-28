@@ -1,0 +1,228 @@
+{
+    "assistant_markdown": "Rationale: Converted the Equipment into a fragile, colorless Artifact\nCreature that evokes obsidian as brittle volcanic glass. Renamed to\nVolcanic Glass Stalker (keeps the theme without saying the theme word),\nadded an appropriate creature type (Golem), kept Deathtouch and Trample\nvia keywords, and replaced the Equipment rules with a shatter-on-damage\ncreature ability. Costs and other fields remain unchanged.\n",
+    "card_name": "Volcanic Glass Glaive",
+    "modified_card_json": {
+        "colorIdentity": [],
+        "colors": [],
+        "keywords": [
+            "Deathtouch",
+            "Trample"
+        ],
+        "layout": "normal",
+        "manaCost": "{1}",
+        "manaValue": 1,
+        "name": "Volcanic Glass Stalker",
+        "subtypes": [
+            "Golem"
+        ],
+        "text": "Whenever Volcanic Glass Stalker is dealt damage, sacrifice it.",
+        "types": [
+            "Artifact",
+            "Creature"
+        ]
+    },
+    "num_field_edits": 10,
+    "patches": [
+        [],
+        [],
+        [],
+        [],
+        [],
+        [
+            {
+                "block": {
+                    "c": [
+                        [
+                            [
+                                {
+                                    "c": "manaValue",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            {
+                                                "c": "1.0",
+                                                "t": "Str"
+                                            }
+                                        ],
+                                        "t": "Para"
+                                    }
+                                ]
+                            ]
+                        ]
+                    ],
+                    "t": "DefinitionList"
+                },
+                "focus": {
+                    "index": 0
+                },
+                "op": "replace"
+            }
+        ],
+        [
+            {
+                "block": {
+                    "c": [
+                        [
+                            [
+                                {
+                                    "c": "name",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            {
+                                                "c": "Volcanic Glass Stalker",
+                                                "t": "Str"
+                                            }
+                                        ],
+                                        "t": "Para"
+                                    }
+                                ]
+                            ]
+                        ]
+                    ],
+                    "t": "DefinitionList"
+                },
+                "focus": {
+                    "index": 0
+                },
+                "op": "replace"
+            }
+        ],
+        [
+            {
+                "block": {
+                    "c": [
+                        [
+                            [
+                                {
+                                    "c": "subtypes",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            [
+                                                {
+                                                    "c": [
+                                                        {
+                                                            "c": "Golem",
+                                                            "t": "Str"
+                                                        }
+                                                    ],
+                                                    "t": "Para"
+                                                }
+                                            ]
+                                        ],
+                                        "t": "BulletList"
+                                    }
+                                ]
+                            ]
+                        ]
+                    ],
+                    "t": "DefinitionList"
+                },
+                "focus": {
+                    "index": 0
+                },
+                "op": "replace"
+            }
+        ],
+        [
+            {
+                "block": {
+                    "c": [
+                        [
+                            [
+                                {
+                                    "c": "text",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            {
+                                                "c": "Whenever Volcanic Glass Stalker is dealt damage, sacrifice it.",
+                                                "t": "Str"
+                                            }
+                                        ],
+                                        "t": "Para"
+                                    }
+                                ]
+                            ]
+                        ]
+                    ],
+                    "t": "DefinitionList"
+                },
+                "focus": {
+                    "index": 0
+                },
+                "op": "replace"
+            }
+        ],
+        [
+            {
+                "block": {
+                    "c": [
+                        [
+                            [
+                                {
+                                    "c": "types",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            [
+                                                {
+                                                    "c": [
+                                                        {
+                                                            "c": "Artifact",
+                                                            "t": "Str"
+                                                        }
+                                                    ],
+                                                    "t": "Para"
+                                                }
+                                            ],
+                                            [
+                                                {
+                                                    "c": [
+                                                        {
+                                                            "c": "Creature",
+                                                            "t": "Str"
+                                                        }
+                                                    ],
+                                                    "t": "Para"
+                                                }
+                                            ]
+                                        ],
+                                        "t": "BulletList"
+                                    }
+                                ]
+                            ]
+                        ]
+                    ],
+                    "t": "DefinitionList"
+                },
+                "focus": {
+                    "index": 0
+                },
+                "op": "replace"
+            }
+        ]
+    ],
+    "source": "20250926-201559-Volcanic Glass Glaive.full"
+}

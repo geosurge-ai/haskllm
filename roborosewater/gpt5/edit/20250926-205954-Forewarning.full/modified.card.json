@@ -1,0 +1,371 @@
+{
+    "assistant_markdown": "Converted to a blue creature that preserves the omen/foreshadowing theme\nwithout using the theme word in the name. Gave it Flash and an ETB\n“Force Spike + scry” to mirror the original instant. This keeps\nSpike-friendly play patterns while staying conservative at 4 mana.\n",
+    "card_name": "Forewarning",
+    "modified_card_json": {
+        "colorIdentity": [
+            "U"
+        ],
+        "colors": [
+            "U"
+        ],
+        "keywords": [
+            "Scry",
+            "Flash"
+        ],
+        "layout": "normal",
+        "manaCost": "{3}{U}",
+        "manaValue": 4,
+        "name": "Portent Courier",
+        "subtypes": [
+            "Human",
+            "Wizard"
+        ],
+        "supertypes": [],
+        "text": "Flash When Portent Courier enters the battlefield, counter target spell unless its controller pays 1. Scry 1.",
+        "types": [
+            "Creature"
+        ]
+    },
+    "num_field_edits": 11,
+    "patches": [
+        [],
+        [],
+        [
+            {
+                "block": {
+                    "c": [
+                        [
+                            [
+                                {
+                                    "c": "keywords",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            [
+                                                {
+                                                    "c": [
+                                                        {
+                                                            "c": "Scry",
+                                                            "t": "Str"
+                                                        }
+                                                    ],
+                                                    "t": "Para"
+                                                }
+                                            ],
+                                            [
+                                                {
+                                                    "c": [
+                                                        {
+                                                            "c": "Flash",
+                                                            "t": "Str"
+                                                        }
+                                                    ],
+                                                    "t": "Para"
+                                                }
+                                            ]
+                                        ],
+                                        "t": "BulletList"
+                                    }
+                                ]
+                            ]
+                        ]
+                    ],
+                    "t": "DefinitionList"
+                },
+                "focus": {
+                    "index": 0
+                },
+                "op": "replace"
+            }
+        ],
+        [],
+        [],
+        [],
+        [
+            {
+                "block": {
+                    "c": [
+                        [
+                            [
+                                {
+                                    "c": "name",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            {
+                                                "c": "Portent",
+                                                "t": "Str"
+                                            },
+                                            {
+                                                "t": "Space"
+                                            },
+                                            {
+                                                "c": "Courier",
+                                                "t": "Str"
+                                            }
+                                        ],
+                                        "t": "Para"
+                                    }
+                                ]
+                            ]
+                        ]
+                    ],
+                    "t": "DefinitionList"
+                },
+                "focus": {
+                    "index": 0
+                },
+                "op": "replace"
+            }
+        ],
+        [
+            {
+                "block": {
+                    "c": [
+                        [
+                            [
+                                {
+                                    "c": "subtypes",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            [
+                                                {
+                                                    "c": [
+                                                        {
+                                                            "c": "Human",
+                                                            "t": "Str"
+                                                        }
+                                                    ],
+                                                    "t": "Para"
+                                                }
+                                            ],
+                                            [
+                                                {
+                                                    "c": [
+                                                        {
+                                                            "c": "Wizard",
+                                                            "t": "Str"
+                                                        }
+                                                    ],
+                                                    "t": "Para"
+                                                }
+                                            ]
+                                        ],
+                                        "t": "BulletList"
+                                    }
+                                ]
+                            ]
+                        ]
+                    ],
+                    "t": "DefinitionList"
+                },
+                "focus": {
+                    "index": 0
+                },
+                "op": "replace"
+            }
+        ],
+        [],
+        [
+            {
+                "block": {
+                    "c": [
+                        [
+                            [
+                                {
+                                    "c": "text",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            {
+                                                "c": "Flash",
+                                                "t": "Str"
+                                            },
+                                            {
+                                                "t": "Space"
+                                            },
+                                            {
+                                                "c": "When",
+                                                "t": "Str"
+                                            },
+                                            {
+                                                "t": "Space"
+                                            },
+                                            {
+                                                "c": "Portent",
+                                                "t": "Str"
+                                            },
+                                            {
+                                                "t": "Space"
+                                            },
+                                            {
+                                                "c": "Courier",
+                                                "t": "Str"
+                                            },
+                                            {
+                                                "t": "Space"
+                                            },
+                                            {
+                                                "c": "enters",
+                                                "t": "Str"
+                                            },
+                                            {
+                                                "t": "Space"
+                                            },
+                                            {
+                                                "c": "the",
+                                                "t": "Str"
+                                            },
+                                            {
+                                                "t": "Space"
+                                            },
+                                            {
+                                                "c": "battlefield,",
+                                                "t": "Str"
+                                            },
+                                            {
+                                                "t": "Space"
+                                            },
+                                            {
+                                                "c": "counter",
+                                                "t": "Str"
+                                            },
+                                            {
+                                                "t": "Space"
+                                            },
+                                            {
+                                                "c": "target",
+                                                "t": "Str"
+                                            },
+                                            {
+                                                "t": "Space"
+                                            },
+                                            {
+                                                "c": "spell",
+                                                "t": "Str"
+                                            },
+                                            {
+                                                "t": "Space"
+                                            },
+                                            {
+                                                "c": "unless",
+                                                "t": "Str"
+                                            },
+                                            {
+                                                "t": "Space"
+                                            },
+                                            {
+                                                "c": "its",
+                                                "t": "Str"
+                                            },
+                                            {
+                                                "t": "Space"
+                                            },
+                                            {
+                                                "c": "controller",
+                                                "t": "Str"
+                                            },
+                                            {
+                                                "t": "Space"
+                                            },
+                                            {
+                                                "c": "pays",
+                                                "t": "Str"
+                                            },
+                                            {
+                                                "t": "Space"
+                                            },
+                                            {
+                                                "c": "1.",
+                                                "t": "Str"
+                                            },
+                                            {
+                                                "t": "Space"
+                                            },
+                                            {
+                                                "c": "Scry",
+                                                "t": "Str"
+                                            },
+                                            {
+                                                "t": "Space"
+                                            },
+                                            {
+                                                "c": "1.",
+                                                "t": "Str"
+                                            }
+                                        ],
+                                        "t": "Para"
+                                    }
+                                ]
+                            ]
+                        ]
+                    ],
+                    "t": "DefinitionList"
+                },
+                "focus": {
+                    "index": 0
+                },
+                "op": "replace"
+            }
+        ],
+        [
+            {
+                "block": {
+                    "c": [
+                        [
+                            [
+                                {
+                                    "c": "types",
+                                    "t": "Str"
+                                }
+                            ],
+                            [
+                                [
+                                    {
+                                        "c": [
+                                            [
+                                                {
+                                                    "c": [
+                                                        {
+                                                            "c": "Creature",
+                                                            "t": "Str"
+                                                        }
+                                                    ],
+                                                    "t": "Para"
+                                                }
+                                            ]
+                                        ],
+                                        "t": "BulletList"
+                                    }
+                                ]
+                            ]
+                        ]
+                    ],
+                    "t": "DefinitionList"
+                },
+                "focus": {
+                    "index": 0
+                },
+                "op": "replace"
+            }
+        ]
+    ],
+    "source": "20250926-205954-Forewarning.full"
+}
