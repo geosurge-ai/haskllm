@@ -12,7 +12,9 @@ build-type: Simple
 library
   exposed-modules:
     HaskLLM
+    HaskLLM.CardPandoc
     HaskLLM.OpenAI.GPT5
+    HaskLLM.PandocChat
     HaskLLM.VLLM.QweN2_5
 
   hs-source-dirs: src
@@ -21,9 +23,17 @@ library
     base,
     bytestring,
     containers,
+    data-default,
     http-client,
     http-client-tls,
-    text
+    lens,
+    pandoc,
+    pandoc-command-simple,
+    pandoc-lens,
+    pandoc-types,
+    scientific,
+    text,
+    vector
 
   default-language: GHC2021
   ghc-options:
@@ -46,14 +56,21 @@ test-suite haskllm-test
     base,
     bytestring,
     containers,
+    data-default,
     directory,
     filepath,
     haskllm,
     hspec,
+    lens,
+    pandoc,
+    pandoc-command-simple,
+    pandoc-lens,
+    pandoc-types,
     random,
     scientific,
     text,
-    time
+    time,
+    vector
 
   default-language: GHC2021
   ghc-options:
