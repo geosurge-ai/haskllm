@@ -65,3 +65,28 @@ class LLMFormatChat provider where
     [ChatMessage] ->
     JSONSchemaSpec ->
     m Value
+
+  -- | Plain chat with configurable max tokens; returns assistant text.
+  respondTextWithTokens ::
+    (MonadIO m) =>
+    provider ->
+    Credentials ->
+    Text ->
+    [ChatMessage] ->
+    Maybe Int ->
+    m Text
+
+  -- | Chat with enforced JSON schema and configurable max tokens; returns parsed JSON (throws on invalid JSON).
+  respondJSONWithTokens ::
+    (MonadIO m) =>
+    provider ->
+    Credentials ->
+    Text ->
+    [ChatMessage] ->
+    JSONSchemaSpec ->
+    Maybe Int ->
+    m Value
+
+  -- Default implementations for backwards compatibility
+  respondTextWithTokens prov creds model msgs _ = respondText prov creds model msgs
+  respondJSONWithTokens prov creds model msgs schema _ = respondJSON prov creds model msgs schema

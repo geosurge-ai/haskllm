@@ -18,6 +18,8 @@ module HaskLLM.PandocChat
   ( Body,
     respondPandocChat,
     -- \^ core entry point
+    respondPandocChatWithTokens,
+    -- \^ core entry point with configurable max tokens
     applyEditsToBodies,
   )
 where
@@ -139,7 +141,8 @@ schemaForPatches n =
             "properties"
               .= object
                 [ "op" .= object ["type" .= ("string" :: Text)],
-                  "focus" .= object ["type" .= ("object" :: Text)]
+                  "focus" .= object ["type" .= ("object" :: Text)],
+                  "block" .= object ["type" .= ("object" :: Text)]
                 ],
             "required" .= (["op", "focus"] :: [Text])
           ]
@@ -202,19 +205,36 @@ respondPandocChat ::
   -- | attachments to be edited
   Maybe [Body] ->
   m (Map Text Pandoc, Maybe [[SimpleOp]])
-respondPandocChat prov creds model prompts mBodies = do
+respondPandocChat prov creds model prompts mBodies =
+  respondPandocChatWithTokens prov creds model prompts mBodies Nothing
+
+-- | Like 'respondPandocChat' but with configurable max_tokens parameter
+respondPandocChatWithTokens ::
+  (LLMFormatChat provider, MonadIO m, MonadFail m) =>
+  provider ->
+  Credentials ->
+  -- | model identifier
+  Text ->
+  -- | prompts: system/user/aux
+  Map Text Pandoc ->
+  -- | attachments to be edited
+  Maybe [Body] ->
+  -- | max tokens (Nothing uses provider default)
+  Maybe Int ->
+  m (Map Text Pandoc, Maybe [[SimpleOp]])
+respondPandocChatWithTokens prov creds model prompts mBodies mMaxTokens = do
   let baseMsgs = promptsToMessages prompts
   case mBodies of
     Nothing -> do
       -- Plain chat, no patches requested.
-      txt <- respondText prov creds model baseMsgs
+      txt <- respondTextWithTokens prov creds model baseMsgs mMaxTokens
       case runPure (readMarkdown def txt) of
         Right p -> pure (M.singleton "assistant" p, Nothing)
         Left e -> fail ("Failed to parse assistant markdown: " <> show e)
     Just bodies
       | null bodies -> do
           -- Nothing to edit; act like plain chat but return an empty patch matrix.
-          txt <- respondText prov creds model baseMsgs
+          txt <- respondTextWithTokens prov creds model baseMsgs mMaxTokens
           case runPure (readMarkdown def txt) of
             Right p -> pure (M.singleton "assistant" p, Just [])
             Left e -> fail ("Failed to parse assistant markdown: " <> show e)
@@ -225,7 +245,7 @@ respondPandocChat prov creds model prompts mBodies = do
                   : (baseMsgs ++ [ChatMessage "user" (attachmentsUserMessage bodies)])
               schema = schemaForPatches (length bodies)
 
-          val <- respondJSON prov creds model msgs schema
+          val <- respondJSONWithTokens prov creds model msgs schema mMaxTokens
 
           (assistantTxt, patches) <-
             case parseAssistantAndPatches val of

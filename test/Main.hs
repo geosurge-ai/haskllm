@@ -37,7 +37,7 @@ import HaskLLM.OpenAI.GPT5
   )
 import HaskLLM.PandocChat
   ( applyEditsToBodies,
-    respondPandocChat,
+    respondPandocChatWithTokens,
   )
 import System.Directory (createDirectoryIfMissing, listDirectory)
 import System.Environment (lookupEnv)
@@ -61,6 +61,10 @@ modelName = "gpt-5" -- Using GPT-5 flagship model for maximum intelligence with 
 
 pandocModelName :: Text
 pandocModelName = "gpt-5" -- gpt5-mini fails on complex JSON schemas
+
+-- Maximum tokens for complex PandocChat operations to prevent truncation
+maxTokensForComplexEdits :: Int
+maxTokensForComplexEdits = 32768 -- 32K tokens for complex card editing operations
 
 --------------------------------------------------------------------------------
 -- Archetypes
@@ -164,7 +168,13 @@ themePool =
     "Bargain",
     "Grudge",
     "Invention",
-    "Alchemy"
+    "Alchemy",
+    "Playfulness",
+    "Expertise",
+    "Inquisitiveness",
+    "Love",
+    "Mythos",
+    "Friendship"
   ]
 
 --------------------------------------------------------------------------------
@@ -612,11 +622,13 @@ mdToPandoc t = either (error . show) id (runPure (readMarkdown def t))
 pandocToMd :: Pandoc -> Text
 pandocToMd p = either (error . show) id (runPure (writeMarkdown def p))
 
--- Extract definition items from a field body (which should be a single-item DefinitionList)
+-- Extract definition items from a field body (handles multiple DefinitionList blocks from InsertAfter operations)
 extractDefinitionItems :: [Block] -> [([Inline], [[Block]])]
-extractDefinitionItems = \case
-  [DefinitionList items] -> items
-  other -> error $ "Expected single DefinitionList, got: " <> show other
+extractDefinitionItems = concatMap extractFromBlock
+  where
+    extractFromBlock :: Block -> [([Inline], [[Block]])]
+    extractFromBlock (DefinitionList items) = items
+    extractFromBlock other = error $ "Expected DefinitionList, got: " <> show other
 
 -- Parse original generation context from full.json
 data OriginalContext = OriginalContext
@@ -747,7 +759,7 @@ testPandocChatEdits creds = do
                   "Do NOT invent new named counters. Use only existing mechanics if needed.",
                   "Edit only the fields that need changes - leave others unchanged."
                 ]
-          userIntent = mdToPandoc "Please edit the individual field attachments to transform this card into a creature. Provide a brief rationale."
+          userIntent = mdToPandoc "Please edit the individual field attachments and insert new fields (such as power and toughness) to change this card into a creature. Provide a brief rationale."
 
       let prompts =
             Map.fromList
@@ -755,10 +767,11 @@ testPandocChatEdits creds = do
                 ("user", userIntent)
               ]
 
-      putStrLn $ "Calling respondPandocChat with " <> show (length fieldBodies) <> " individual field attachments..."
+      putStrLn $ "Calling respondPandocChatWithTokens with " <> show (length fieldBodies) <> " individual field attachments..."
+      putStrLn $ "Using max tokens: " <> show maxTokensForComplexEdits
 
-      -- Ask for patches on individual fields
-      (respMap, mPatches) <- respondPandocChat OpenAI creds pandocModelName prompts (Just fieldBodies)
+      -- Ask for patches on individual fields with increased token limit
+      (respMap, mPatches) <- respondPandocChatWithTokens OpenAI creds pandocModelName prompts (Just fieldBodies) (Just maxTokensForComplexEdits)
       patches <- case mPatches of
         Nothing -> fail "Expected patches for attachment"
         Just ps -> pure ps

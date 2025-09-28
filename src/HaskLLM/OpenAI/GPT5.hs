@@ -28,6 +28,7 @@ import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (toList)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as M
+import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
@@ -121,6 +122,91 @@ instance LLMFormatChat OpenAI where
                 ],
               requestBody = RequestBodyLBS (encode body),
               responseTimeout = responseTimeoutMicro (900 * 1000000) -- 15 minutes for GPT-5 reasoning  -- 5 minutes for GPT-5 reasoning
+            }
+
+    resp <- httpLbs req manager
+    let raw = responseBody resp
+
+    js <- case eitherDecode raw :: Either String Value of
+      Left e -> fail ("OpenAI: invalid JSON response: " <> e)
+      Right ok -> pure ok
+
+    -- Extract the model's textual payload (which should be pure JSON by schema),
+    -- then parse it as JSON and return it.
+    let txt = extractResponsesText js
+
+    case eitherDecode (LBS.fromStrict $ TE.encodeUtf8 txt) :: Either String Value of
+      Right v -> pure v
+      Left e -> fail ("OpenAI: schema-enforced output was not valid JSON: " <> e <> "\nRaw response text: " <> T.unpack txt)
+
+  -- Responses API text output with configurable max tokens.
+  respondTextWithTokens _ (Credentials cred) modelName msgs mMaxTokens = liftIO $ do
+    apiKey <- required "openai_api_key" cred
+    manager <- newManager tlsManagerSettings
+    req0 <- parseRequest "https://api.openai.com/v1/responses"
+
+    -- Convert ChatMessage to proper format for Responses API
+    let inputMessages = map chatMessageToValue msgs
+        maxTokens = fromMaybe 8192 mMaxTokens
+        body =
+          object
+            [ "model" .= modelName,
+              "input" .= inputMessages,
+              "max_output_tokens" .= maxTokens
+            ]
+        req =
+          req0
+            { method = "POST",
+              requestHeaders =
+                [ ("Authorization", "Bearer " <> TE.encodeUtf8 apiKey),
+                  ("Content-Type", "application/json")
+                ],
+              requestBody = RequestBodyLBS (encode body),
+              responseTimeout = responseTimeoutMicro (900 * 1000000) -- 15 minutes for GPT-5 reasoning
+            }
+
+    resp <- httpLbs req manager
+    let raw = responseBody resp
+
+    case eitherDecode raw :: Either String Value of
+      Left e -> fail ("OpenAI: invalid JSON response: " <> e)
+      Right js -> pure (extractResponsesText js)
+
+  -- Responses API structured output with JSON schema and configurable max tokens.
+  respondJSONWithTokens _ (Credentials cred) modelName msgs (JSONSchemaSpec nm sch isStrict) mMaxTokens = liftIO $ do
+    apiKey <- required "openai_api_key" cred
+    manager <- newManager tlsManagerSettings
+    req0 <- parseRequest "https://api.openai.com/v1/responses"
+
+    -- Convert ChatMessage to proper format for Responses API
+    let inputMessages = map chatMessageToValue msgs
+        maxTokens = fromMaybe 8192 mMaxTokens
+
+    -- Based on API error: Responses API uses text.format, not response_format
+    let textFormat =
+          object
+            [ "type" .= ("json_schema" :: Text),
+              "name" .= nm,
+              "schema" .= sch,
+              "strict" .= isStrict
+            ]
+        body =
+          object
+            [ "model" .= modelName,
+              "input" .= inputMessages,
+              "text" .= object ["format" .= textFormat],
+              "max_output_tokens" .= maxTokens
+            ]
+
+        req =
+          req0
+            { method = "POST",
+              requestHeaders =
+                [ ("Authorization", "Bearer " <> TE.encodeUtf8 apiKey),
+                  ("Content-Type", "application/json")
+                ],
+              requestBody = RequestBodyLBS (encode body),
+              responseTimeout = responseTimeoutMicro (900 * 1000000) -- 15 minutes for GPT-5 reasoning
             }
 
     resp <- httpLbs req manager

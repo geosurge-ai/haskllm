@@ -56,7 +56,7 @@ instance LLMFormatChat Qwen where
           object
             [ "model" .= modelName,
               "messages" .= msgs,
-              "temperature" .= (0 :: Int)
+              "temperature" .= (0.7 :: Double)
             ]
     manager <- newManager tlsManagerSettings
     req0 <- parseRequest (T.unpack url)
@@ -98,9 +98,106 @@ instance LLMFormatChat Qwen where
           object
             [ "model" .= modelName,
               "messages" .= msgs,
-              "temperature" .= (0 :: Int),
+              "temperature" .= (0.7 :: Double),
               "response_format" .= responseFormat
             ]
+    manager <- newManager tlsManagerSettings
+    req0 <- parseRequest (T.unpack url)
+    let req =
+          req0
+            { method = "POST",
+              requestHeaders =
+                [ ("Content-Type", "application/json"),
+                  ("x-api-key", TE.encodeUtf8 apiKey),
+                  ("x-session-token", TE.encodeUtf8 session)
+                ],
+              requestBody = RequestBodyLBS (encode body),
+              responseTimeout = responseTimeoutMicro (120 * 1000000)
+            }
+    resp <- httpLbs req manager
+    let raw = responseBody resp
+    js <- case eitherDecode raw :: Either String Value of
+      Left e -> fail ("vLLM: invalid JSON response: " <> e)
+      Right ok -> pure ok
+
+    let txt = extractChatContent js
+    case eitherDecode (LBS.fromStrict $ TE.encodeUtf8 txt) :: Either String Value of
+      Right v -> pure v
+      Left e -> fail ("vLLM: schema-enforced output was not valid JSON: " <> e)
+
+  -- Plain chat with configurable max tokens.
+  respondTextWithTokens _ (Credentials cred) modelName msgs mMaxTokens = liftIO $ do
+    base <- required "base_url" cred
+    apiKey <- required "api_key" cred
+    session <- required "session_token" cred
+
+    let url = concretizeChatEndpoint base
+        body = case mMaxTokens of
+          Nothing ->
+            object
+              [ "model" .= modelName,
+                "messages" .= msgs,
+                "temperature" .= (0.7 :: Double)
+              ]
+          Just maxTokens ->
+            object
+              [ "model" .= modelName,
+                "messages" .= msgs,
+                "temperature" .= (0.7 :: Double),
+                "max_tokens" .= maxTokens
+              ]
+    manager <- newManager tlsManagerSettings
+    req0 <- parseRequest (T.unpack url)
+    let req =
+          req0
+            { method = "POST",
+              requestHeaders =
+                [ ("Content-Type", "application/json"),
+                  ("x-api-key", TE.encodeUtf8 apiKey),
+                  ("x-session-token", TE.encodeUtf8 session)
+                ],
+              requestBody = RequestBodyLBS (encode body),
+              responseTimeout = responseTimeoutMicro (120 * 1000000)
+            }
+    resp <- httpLbs req manager
+    let raw = responseBody resp
+    case eitherDecode raw :: Either String Value of
+      Left e -> fail ("vLLM: invalid JSON response: " <> e)
+      Right js -> pure (extractChatContent js)
+
+  -- Enforced JSON schema with configurable max tokens via `response_format` (vLLM / chat.completions).
+  respondJSONWithTokens _ (Credentials cred) modelName msgs (JSONSchemaSpec nm sch isStrict) mMaxTokens = liftIO $ do
+    base <- required "base_url" cred
+    apiKey <- required "api_key" cred
+    session <- required "session_token" cred
+
+    let url = concretizeChatEndpoint base
+        responseFormat =
+          object
+            [ "type" .= ("json_schema" :: Text),
+              "json_schema"
+                .= object
+                  [ "name" .= nm,
+                    "schema" .= sch,
+                    "strict" .= isStrict
+                  ]
+            ]
+        body = case mMaxTokens of
+          Nothing ->
+            object
+              [ "model" .= modelName,
+                "messages" .= msgs,
+                "temperature" .= (0.7 :: Double),
+                "response_format" .= responseFormat
+              ]
+          Just maxTokens ->
+            object
+              [ "model" .= modelName,
+                "messages" .= msgs,
+                "temperature" .= (0.7 :: Double),
+                "response_format" .= responseFormat,
+                "max_tokens" .= maxTokens
+              ]
     manager <- newManager tlsManagerSettings
     req0 <- parseRequest (T.unpack url)
     let req =
