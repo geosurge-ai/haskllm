@@ -1,0 +1,19 @@
+{
+    "colorIdentity": [
+        "U"
+    ],
+    "colors": [
+        "U"
+    ],
+    "keywords": [],
+    "layout": "normal",
+    "manaCost": "{2}{U}",
+    "manaValue": 3,
+    "name": "Petty Ledger",
+    "subtypes": [],
+    "supertypes": [],
+    "text": "At the beginning of your end step, if exactly one source an opponent controlled dealt damage to you this turn, put a slight counter on Petty Ledger.\n{2}, {T}, Remove three slight counters from Petty Ledger: Copy target activated or triggered ability you control. You may choose new targets for the copy. Activate only as a sorcery.",
+    "types": [
+        "Enchantment"
+    ]
+}

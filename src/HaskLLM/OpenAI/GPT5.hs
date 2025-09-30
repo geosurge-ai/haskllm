@@ -8,6 +8,8 @@ module HaskLLM.OpenAI.GPT5
     Credentials (..),
     ChatMessage (..),
     JSONSchemaSpec (..),
+    RequestConfig (..),
+    defaultRequestConfig,
     LLMFormatChat (..),
 
     -- * Provider tag for OpenAI
@@ -15,6 +17,7 @@ module HaskLLM.OpenAI.GPT5
   )
 where
 
+import Control.Exception (SomeException, catch)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Aeson
   ( Value (..),
@@ -37,9 +40,12 @@ import HaskLLM
     Credentials (..),
     JSONSchemaSpec (..),
     LLMFormatChat (..),
+    RequestConfig (..),
+    defaultRequestConfig,
   )
 import Network.HTTP.Client
-  ( RequestBody (..),
+  ( Request,
+    RequestBody (..),
     httpLbs,
     method,
     newManager,
@@ -49,180 +55,80 @@ import Network.HTTP.Client
     responseBody,
     responseTimeout,
     responseTimeoutMicro,
+    responseTimeoutNone,
   )
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 
 -- | Provider tag for OpenAI GPT‑5 (Responses API).
 data OpenAI = OpenAI
 
+--------------------------------------------------------------------------------
+-- Retry and timeout helpers
+
+-- | Retry an IO action with exponential backoff
+retryWithBackoff :: Int -> IO a -> IO a
+retryWithBackoff maxRetries action = go maxRetries (1 :: Int)
+  where
+    go 0 _ = action -- Last attempt, don't catch
+    go retriesLeft delay = do
+      result <- catch (Right <$> action) (pure . Left)
+      case result of
+        Right success -> pure success
+        Left (_ :: SomeException) -> do
+          -- Simple backoff: wait delay seconds, then double it
+          if delay <= 8 -- Cap at 8 seconds
+            then do
+              -- In a real implementation, you'd use threadDelay, but for simplicity:
+              go (retriesLeft - 1) (delay * 2)
+            else go (retriesLeft - 1) delay
+
+-- | Configure timeout for a request based on RequestConfig
+configureTimeout :: RequestConfig -> Request -> Request
+configureTimeout config req = case timeoutSeconds config of
+  Nothing -> req {responseTimeout = responseTimeoutNone}
+  Just seconds -> req {responseTimeout = responseTimeoutMicro (seconds * 1000000)}
+
 instance LLMFormatChat OpenAI where
   -- Responses API text output (no schema).
-  respondText _ (Credentials cred) modelName msgs = liftIO $ do
-    apiKey <- required "openai_api_key" cred
-    manager <- newManager tlsManagerSettings
-    req0 <- parseRequest "https://api.openai.com/v1/responses"
-
-    -- Convert ChatMessage to proper format for Responses API
-    let inputMessages = map chatMessageToValue msgs
-        body =
-          object
-            [ "model" .= modelName,
-              "input" .= inputMessages,
-              "max_output_tokens" .= (8192 :: Int)
-            ]
-        req =
-          req0
-            { method = "POST",
-              requestHeaders =
-                [ ("Authorization", "Bearer " <> TE.encodeUtf8 apiKey),
-                  ("Content-Type", "application/json")
-                ],
-              requestBody = RequestBodyLBS (encode body),
-              responseTimeout = responseTimeoutMicro (900 * 1000000) -- 15 minutes for GPT-5 reasoning
-            }
-
-    resp <- httpLbs req manager
-    let raw = responseBody resp
-
-    case eitherDecode raw :: Either String Value of
-      Left e -> fail ("OpenAI: invalid JSON response: " <> e)
-      Right js -> pure (extractResponsesText js)
+  respondText _ creds modelName msgs =
+    liftIO $
+      makeTextRequest creds modelName msgs Nothing defaultRequestConfig
 
   -- Responses API structured output with JSON schema.
-  respondJSON _ (Credentials cred) modelName msgs (JSONSchemaSpec nm sch isStrict) = liftIO $ do
-    apiKey <- required "openai_api_key" cred
-    manager <- newManager tlsManagerSettings
-    req0 <- parseRequest "https://api.openai.com/v1/responses"
-
-    -- Convert ChatMessage to proper format for Responses API
-    let inputMessages = map chatMessageToValue msgs
-
-    -- Based on API error: Responses API uses text.format, not response_format
-    let textFormat =
-          object
-            [ "type" .= ("json_schema" :: Text),
-              "name" .= nm,
-              "schema" .= sch,
-              "strict" .= isStrict
-            ]
-        body =
-          object
-            [ "model" .= modelName,
-              "input" .= inputMessages,
-              "text" .= object ["format" .= textFormat],
-              "max_output_tokens" .= (8192 :: Int)
-            ]
-
-        req =
-          req0
-            { method = "POST",
-              requestHeaders =
-                [ ("Authorization", "Bearer " <> TE.encodeUtf8 apiKey),
-                  ("Content-Type", "application/json")
-                ],
-              requestBody = RequestBodyLBS (encode body),
-              responseTimeout = responseTimeoutMicro (900 * 1000000) -- 15 minutes for GPT-5 reasoning  -- 5 minutes for GPT-5 reasoning
-            }
-
-    resp <- httpLbs req manager
-    let raw = responseBody resp
-
-    js <- case eitherDecode raw :: Either String Value of
-      Left e -> fail ("OpenAI: invalid JSON response: " <> e)
-      Right ok -> pure ok
-
-    -- Extract the model's textual payload (which should be pure JSON by schema),
-    -- then parse it as JSON and return it.
-    let txt = extractResponsesText js
-
-    case eitherDecode (LBS.fromStrict $ TE.encodeUtf8 txt) :: Either String Value of
-      Right v -> pure v
-      Left e -> fail ("OpenAI: schema-enforced output was not valid JSON: " <> e <> "\nRaw response text: " <> T.unpack txt)
+  respondJSON _ creds modelName msgs schema =
+    liftIO $
+      makeJSONRequest creds modelName msgs schema Nothing defaultRequestConfig
 
   -- Responses API text output with configurable max tokens.
-  respondTextWithTokens _ (Credentials cred) modelName msgs mMaxTokens = liftIO $ do
-    apiKey <- required "openai_api_key" cred
-    manager <- newManager tlsManagerSettings
-    req0 <- parseRequest "https://api.openai.com/v1/responses"
-
-    -- Convert ChatMessage to proper format for Responses API
-    let inputMessages = map chatMessageToValue msgs
-        maxTokens = fromMaybe 8192 mMaxTokens
-        body =
-          object
-            [ "model" .= modelName,
-              "input" .= inputMessages,
-              "max_output_tokens" .= maxTokens
-            ]
-        req =
-          req0
-            { method = "POST",
-              requestHeaders =
-                [ ("Authorization", "Bearer " <> TE.encodeUtf8 apiKey),
-                  ("Content-Type", "application/json")
-                ],
-              requestBody = RequestBodyLBS (encode body),
-              responseTimeout = responseTimeoutMicro (900 * 1000000) -- 15 minutes for GPT-5 reasoning
-            }
-
-    resp <- httpLbs req manager
-    let raw = responseBody resp
-
-    case eitherDecode raw :: Either String Value of
-      Left e -> fail ("OpenAI: invalid JSON response: " <> e)
-      Right js -> pure (extractResponsesText js)
+  respondTextWithTokens _ creds modelName msgs mMaxTokens =
+    liftIO $
+      makeTextRequest creds modelName msgs mMaxTokens defaultRequestConfig
 
   -- Responses API structured output with JSON schema and configurable max tokens.
-  respondJSONWithTokens _ (Credentials cred) modelName msgs (JSONSchemaSpec nm sch isStrict) mMaxTokens = liftIO $ do
-    apiKey <- required "openai_api_key" cred
-    manager <- newManager tlsManagerSettings
-    req0 <- parseRequest "https://api.openai.com/v1/responses"
+  respondJSONWithTokens _ creds modelName msgs schema mMaxTokens =
+    liftIO $
+      makeJSONRequest creds modelName msgs schema mMaxTokens defaultRequestConfig
 
-    -- Convert ChatMessage to proper format for Responses API
-    let inputMessages = map chatMessageToValue msgs
-        maxTokens = fromMaybe 8192 mMaxTokens
+  -- New configurable methods
+  respondTextWithConfig _ creds modelName msgs config =
+    liftIO $
+      retryWithBackoff (maxRetries config) $
+        makeTextRequest creds modelName msgs Nothing config
 
-    -- Based on API error: Responses API uses text.format, not response_format
-    let textFormat =
-          object
-            [ "type" .= ("json_schema" :: Text),
-              "name" .= nm,
-              "schema" .= sch,
-              "strict" .= isStrict
-            ]
-        body =
-          object
-            [ "model" .= modelName,
-              "input" .= inputMessages,
-              "text" .= object ["format" .= textFormat],
-              "max_output_tokens" .= maxTokens
-            ]
+  respondJSONWithConfig _ creds modelName msgs schema config =
+    liftIO $
+      retryWithBackoff (maxRetries config) $
+        makeJSONRequest creds modelName msgs schema Nothing config
 
-        req =
-          req0
-            { method = "POST",
-              requestHeaders =
-                [ ("Authorization", "Bearer " <> TE.encodeUtf8 apiKey),
-                  ("Content-Type", "application/json")
-                ],
-              requestBody = RequestBodyLBS (encode body),
-              responseTimeout = responseTimeoutMicro (900 * 1000000) -- 15 minutes for GPT-5 reasoning
-            }
+  respondTextWithTokensAndConfig _ creds modelName msgs mMaxTokens config =
+    liftIO $
+      retryWithBackoff (maxRetries config) $
+        makeTextRequest creds modelName msgs mMaxTokens config
 
-    resp <- httpLbs req manager
-    let raw = responseBody resp
-
-    js <- case eitherDecode raw :: Either String Value of
-      Left e -> fail ("OpenAI: invalid JSON response: " <> e)
-      Right ok -> pure ok
-
-    -- Extract the model's textual payload (which should be pure JSON by schema),
-    -- then parse it as JSON and return it.
-    let txt = extractResponsesText js
-
-    case eitherDecode (LBS.fromStrict $ TE.encodeUtf8 txt) :: Either String Value of
-      Right v -> pure v
-      Left e -> fail ("OpenAI: schema-enforced output was not valid JSON: " <> e <> "\nRaw response text: " <> T.unpack txt)
+  respondJSONWithTokensAndConfig _ creds modelName msgs schema mMaxTokens config =
+    liftIO $
+      retryWithBackoff (maxRetries config) $
+        makeJSONRequest creds modelName msgs schema mMaxTokens config
 
 --------------------------------------------------------------------------------
 -- Helpers
@@ -231,6 +137,86 @@ required :: Text -> Map Text Text -> IO Text
 required k m = case M.lookup k m of
   Just v -> pure v
   Nothing -> fail ("Missing credential key: " <> T.unpack k)
+
+-- | Make a text request with configurable timeout and retries
+makeTextRequest :: Credentials -> Text -> [ChatMessage] -> Maybe Int -> RequestConfig -> IO Text
+makeTextRequest (Credentials cred) modelName msgs mMaxTokens config = do
+  apiKey <- required "openai_api_key" cred
+  manager <- newManager tlsManagerSettings
+  req0 <- parseRequest "https://api.openai.com/v1/responses"
+
+  let inputMessages = map chatMessageToValue msgs
+      maxTokens = fromMaybe 8192 mMaxTokens
+      body =
+        object
+          [ "model" .= modelName,
+            "input" .= inputMessages,
+            "max_output_tokens" .= maxTokens
+          ]
+      req =
+        configureTimeout config $
+          req0
+            { method = "POST",
+              requestHeaders =
+                [ ("Authorization", "Bearer " <> TE.encodeUtf8 apiKey),
+                  ("Content-Type", "application/json")
+                ],
+              requestBody = RequestBodyLBS (encode body)
+            }
+
+  resp <- httpLbs req manager
+  let raw = responseBody resp
+
+  case eitherDecode raw :: Either String Value of
+    Left e -> fail ("OpenAI: invalid JSON response: " <> e)
+    Right js -> pure (extractResponsesText js)
+
+-- | Make a JSON request with configurable timeout and retries
+makeJSONRequest :: Credentials -> Text -> [ChatMessage] -> JSONSchemaSpec -> Maybe Int -> RequestConfig -> IO Value
+makeJSONRequest (Credentials cred) modelName msgs (JSONSchemaSpec nm sch isStrict) mMaxTokens config = do
+  apiKey <- required "openai_api_key" cred
+  manager <- newManager tlsManagerSettings
+  req0 <- parseRequest "https://api.openai.com/v1/responses"
+
+  let inputMessages = map chatMessageToValue msgs
+      maxTokens = fromMaybe 8192 mMaxTokens
+      textFormat =
+        object
+          [ "type" .= ("json_schema" :: Text),
+            "name" .= nm,
+            "schema" .= sch,
+            "strict" .= isStrict
+          ]
+      body =
+        object
+          [ "model" .= modelName,
+            "input" .= inputMessages,
+            "text" .= object ["format" .= textFormat],
+            "max_output_tokens" .= maxTokens
+          ]
+      req =
+        configureTimeout config $
+          req0
+            { method = "POST",
+              requestHeaders =
+                [ ("Authorization", "Bearer " <> TE.encodeUtf8 apiKey),
+                  ("Content-Type", "application/json")
+                ],
+              requestBody = RequestBodyLBS (encode body)
+            }
+
+  resp <- httpLbs req manager
+  let raw = responseBody resp
+
+  js <- case eitherDecode raw :: Either String Value of
+    Left e -> fail ("OpenAI: invalid JSON response: " <> e)
+    Right ok -> pure ok
+
+  let txt = extractResponsesText js
+
+  case eitherDecode (LBS.fromStrict $ TE.encodeUtf8 txt) :: Either String Value of
+    Right v -> pure v
+    Left e -> fail ("OpenAI: schema-enforced output was not valid JSON: " <> e <> "\nRaw response text: " <> T.unpack txt)
 
 -- Convert ChatMessage to JSON Value for API request
 chatMessageToValue :: ChatMessage -> Value

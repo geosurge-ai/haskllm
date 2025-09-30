@@ -1,0 +1,19 @@
+{
+    "colorIdentity": [
+        "W"
+    ],
+    "colors": [
+        "W"
+    ],
+    "keywords": [],
+    "layout": "normal",
+    "manaCost": "{4}{W}{W}",
+    "manaValue": 6,
+    "name": "Balance Due",
+    "subtypes": [],
+    "supertypes": [],
+    "text": "This spell costs {2} less to cast if an opponent controls at least two more creatures than you. Destroy all creatures.",
+    "types": [
+        "Sorcery"
+    ]
+}

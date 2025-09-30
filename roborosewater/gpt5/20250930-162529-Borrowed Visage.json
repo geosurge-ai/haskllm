@@ -1,0 +1,20 @@
+{
+    "colorIdentity": [
+        "U"
+    ],
+    "colors": [
+        "U"
+    ],
+    "keywords": [],
+    "layout": "normal",
+    "manaCost": "{3}{U}",
+    "manaValue": 4,
+    "name": "Borrowed Visage",
+    "side": "a",
+    "subtypes": [],
+    "supertypes": [],
+    "text": "Whenever a creature you control is turned face up, you may exile a creature card from your hand face down. You may look at cards exiled with Borrowed Visage.\n{2}{U}, {T}: You may reveal a card exiled with Borrowed Visage. If you do, target creature you control becomes a copy of the revealed card until end of turn. Activate only as a sorcery.",
+    "types": [
+        "Enchantment"
+    ]
+}

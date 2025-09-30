@@ -1,0 +1,19 @@
+{
+    "colorIdentity": [
+        "U"
+    ],
+    "colors": [
+        "U"
+    ],
+    "keywords": [],
+    "layout": "normal",
+    "manaCost": "{1}{U}",
+    "manaValue": 2,
+    "name": "Catalytic Reversion",
+    "subtypes": [],
+    "supertypes": [],
+    "text": "Exile target artifact or creature. Its controller creates a 1/1 blue Homunculus creature token and their choice of a Treasure token or a Clue token.",
+    "types": [
+        "Instant"
+    ]
+}

@@ -1,0 +1,21 @@
+{
+    "colorIdentity": [
+        "B"
+    ],
+    "colors": [
+        "B"
+    ],
+    "keywords": [
+        "Surveil"
+    ],
+    "layout": "normal",
+    "manaCost": "{B}",
+    "manaValue": 1,
+    "name": "Nightglass Cut",
+    "subtypes": [],
+    "supertypes": [],
+    "text": "Target creature gets -2/-2 until end of turn.\nIf this spell was cast during your main phase, surveil 1. (Look at the top card of your library. You may put that card into your graveyard.)",
+    "types": [
+        "Instant"
+    ]
+}

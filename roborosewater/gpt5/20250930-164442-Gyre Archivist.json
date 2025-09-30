@@ -1,0 +1,23 @@
+{
+    "colorIdentity": [
+        "U"
+    ],
+    "colors": [
+        "U"
+    ],
+    "keywords": [],
+    "layout": "normal",
+    "manaCost": "{2}{U}",
+    "manaValue": 3,
+    "name": "Gyre Archivist",
+    "power": "1",
+    "subtypes": [
+        "Merfolk",
+        "Wizard"
+    ],
+    "text": "{2}{U}, {T}: Return target instant or sorcery card with mana value equal to the number of charge counters on Gyre Archivist from your graveyard to your hand. Then put a charge counter on Gyre Archivist. Activate only during your upkeep.\n{1}, Exile an instant or sorcery card from your graveyard: Remove a charge counter from Gyre Archivist. Activate only as a sorcery.",
+    "toughness": "3",
+    "types": [
+        "Creature"
+    ]
+}

@@ -1,0 +1,23 @@
+{
+    "colorIdentity": [
+        "W",
+        "U"
+    ],
+    "colors": [
+        "W",
+        "U"
+    ],
+    "keywords": [
+        "Investigate"
+    ],
+    "layout": "normal",
+    "manaCost": "{1}{W}{U}",
+    "manaValue": 3,
+    "name": "Chamber of Deliberation",
+    "subtypes": [],
+    "supertypes": [],
+    "text": "When Chamber of Deliberation enters the battlefield, investigate.\nWhenever a spell or ability you control counters a spell, investigate.\nAt the beginning of your end step, if you sacrificed three or more Clues this turn, exile up to one target nonland permanent an opponent controls until Chamber of Deliberation leaves the battlefield.",
+    "types": [
+        "Enchantment"
+    ]
+}
