@@ -12,8 +12,10 @@ build-type: Simple
 library
   exposed-modules:
     HaskLLM
+    HaskLLM.FallbackLLM
     HaskLLM.OpenAI.GPT5
     HaskLLM.PandocChat
+    HaskLLM.Phony
     HaskLLM.VLLM.QweN2_5
 
   hs-source-dirs: src
@@ -52,6 +54,7 @@ test-suite haskllm-test
   other-modules:
     CardAtomic
     CardPandoc
+    FallbackTest
     LogUtils
 
   hs-source-dirs: test

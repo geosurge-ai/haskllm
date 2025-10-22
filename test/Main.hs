@@ -24,6 +24,7 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Time (defaultTimeLocale, formatTime, getCurrentTime)
 import Data.Vector qualified as V
+import FallbackTest qualified
 import GHC.Base (when)
 import HaskLLM
   ( ChatMessage (..),
@@ -806,6 +807,9 @@ testPandocChatEdits creds = do
 
 main :: IO ()
 main = hspec $ do
+  -- Run fallback tests first (no API key needed)
+  FallbackTest.spec
+
   describe "GPT-5 JSON-forced MTG card generation & evaluation" $ do
     it ("runs " ++ show iterations ++ " iterations; enforces format; >=66% classification accuracy") $ do
       mKey <- lookupEnv "OPENAI_API_KEY"
