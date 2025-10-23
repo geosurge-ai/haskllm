@@ -44,6 +44,7 @@ import LogUtils
     logInfo,
     withLogSection,
   )
+import QwenIntegrationTest qualified
 import System.Directory (createDirectoryIfMissing, listDirectory)
 import System.Environment (lookupEnv)
 import System.FilePath (takeBaseName, takeExtension, (</>))
@@ -807,8 +808,11 @@ testPandocChatEdits creds = do
 
 main :: IO ()
 main = hspec $ do
-  -- Run fallback tests first (no API key needed)
+  -- Run tests that don't need API keys first
   FallbackTest.spec
+
+  -- Integration tests (need API keys)
+  QwenIntegrationTest.spec
 
   describe "GPT-5 JSON-forced MTG card generation & evaluation" $ do
     it ("runs " ++ show iterations ++ " iterations; enforces format; >=66% classification accuracy") $ do

@@ -2,6 +2,14 @@
 
 -- | vLLM (Qwen) client via OpenAI-compatible Chat Completions API.
 --   Supports strict JSON schema enforcement using `response_format.json_schema`.
+--
+--   Credentials can be provided via the Credentials map or environment variables:
+--   - @base_url@: BLOOD_MONEY_BASE_URL (default: "https://outland-dev-1.doubling-season.geosurge.ai")
+--   - @api_key@: BLOOD_MONEY_API_KEY (required)
+--
+--   The provider checks the Credentials map first, then falls back to environment
+--   variables if a key is missing. If base_url is not provided, uses the default
+--   production URL. The /02/ route for QweN2.5 is automatically appended if needed.
 module HaskLLM.VLLM.QweN2_5
   ( Qwen (..),
   )
@@ -46,6 +54,7 @@ import Network.HTTP.Client
     responseTimeoutNone,
   )
 import Network.HTTP.Client.TLS (tlsManagerSettings)
+import System.Environment (lookupEnv)
 
 -- | Provider tag for vLLM/Qwen (OpenAI-compatible server).
 data Qwen = Qwen
@@ -121,17 +130,37 @@ instance LLMFormatChat Qwen where
 --------------------------------------------------------------------------------
 -- Helpers (local)
 
+-- | Get a required credential, with environment variable fallback.
+--   Checks the credentials map first, then falls back to environment variables.
+--   For base_url, uses a default if neither is provided.
 required :: Text -> M.Map Text Text -> IO Text
 required k m = case M.lookup k m of
   Just v -> pure v
-  Nothing -> fail ("Missing credential key: " <> T.unpack k)
+  Nothing -> do
+    -- Map credential keys to environment variable names
+    let envVar = case k of
+          "api_key" -> "BLOOD_MONEY_API_KEY"
+          "base_url" -> "BLOOD_MONEY_BASE_URL"
+          _ -> T.unpack k -- Default: use the key name as-is
+    mEnv <- lookupEnv envVar
+    case mEnv of
+      Just val -> pure (T.pack val)
+      Nothing -> case k of
+        -- Default base URL for production blood-money infrastructure
+        "base_url" -> pure "https://outland-dev-1.doubling-season.geosurge.ai"
+        _ ->
+          fail $
+            "Missing credential key: "
+              <> T.unpack k
+              <> " (not in Credentials map, and environment variable "
+              <> envVar
+              <> " is not set)"
 
 -- | Make a text request with configurable timeout and retries
 makeTextRequest :: Credentials -> Text -> [ChatMessage] -> Maybe Int -> RequestConfig -> IO Text
 makeTextRequest (Credentials cred) modelName msgs mMaxTokens config = do
   base <- required "base_url" cred
   apiKey <- required "api_key" cred
-  session <- required "session_token" cred
 
   let url = concretizeChatEndpoint base
       body = case mMaxTokens of
@@ -156,8 +185,7 @@ makeTextRequest (Credentials cred) modelName msgs mMaxTokens config = do
             { method = "POST",
               requestHeaders =
                 [ ("Content-Type", "application/json"),
-                  ("x-api-key", TE.encodeUtf8 apiKey),
-                  ("x-session-token", TE.encodeUtf8 session)
+                  ("x-api-key", TE.encodeUtf8 apiKey)
                 ],
               requestBody = RequestBodyLBS (encode body)
             }
@@ -172,7 +200,6 @@ makeJSONRequest :: Credentials -> Text -> [ChatMessage] -> JSONSchemaSpec -> May
 makeJSONRequest (Credentials cred) modelName msgs (JSONSchemaSpec nm sch isStrict) mMaxTokens config = do
   base <- required "base_url" cred
   apiKey <- required "api_key" cred
-  session <- required "session_token" cred
 
   let url = concretizeChatEndpoint base
       responseFormat =
@@ -209,8 +236,7 @@ makeJSONRequest (Credentials cred) modelName msgs (JSONSchemaSpec nm sch isStric
             { method = "POST",
               requestHeaders =
                 [ ("Content-Type", "application/json"),
-                  ("x-api-key", TE.encodeUtf8 apiKey),
-                  ("x-session-token", TE.encodeUtf8 session)
+                  ("x-api-key", TE.encodeUtf8 apiKey)
                 ],
               requestBody = RequestBodyLBS (encode body)
             }
@@ -225,16 +251,22 @@ makeJSONRequest (Credentials cred) modelName msgs (JSONSchemaSpec nm sch isStric
     Right v -> pure v
     Left e -> fail ("vLLM: schema-enforced output was not valid JSON: " <> e)
 
--- Normalize a base URL into a concrete Chat Completions endpoint.
--- Accepts either:
---   - full endpoint that already ends with "/chat/completions" (used verbatim), or
---   - base with or without trailing slash (we append "/v1/chat/completions").
+-- | Normalize a base URL into a concrete Chat Completions endpoint.
+--   Handles the /02/ routing for QweN2.5 in the blood-money infrastructure.
+--
+--   Accepts:
+--   - Full endpoint ending with "/chat/completions" → used verbatim
+--   - Base URL with "/02" → appends "/v1/chat/completions"
+--   - Base URL without "/02" → appends "/02/v1/chat/completions"
 concretizeChatEndpoint :: Text -> Text
 concretizeChatEndpoint base0 =
   let base = T.dropWhileEnd (== '/') base0
    in if "/chat/completions" `T.isSuffixOf` base
-        then base
-        else base <> "/v1/chat/completions"
+        then base -- Already a full endpoint
+        else
+          if "/02" `T.isSuffixOf` base
+            then base <> "/v1/chat/completions" -- Has /02, just add the rest
+            else base <> "/02/v1/chat/completions" -- Needs /02/ route
 
 -- Extract assistant content from OpenAI-compatible Chat Completions.
 extractChatContent :: Value -> Text

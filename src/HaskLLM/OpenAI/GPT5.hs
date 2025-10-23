@@ -3,6 +3,12 @@
 -- | OpenAI GPT-5 client using the Responses API, with structured-output enforcement.
 --   Exposes a generic typeclass for conversational generation with (optional) JSON schema.
 --   The vLLM/Qwen module imports this to implement the same interface against a different endpoint.
+--
+--   Credentials can be provided via the Credentials map or environment variables:
+--   - @openai_api_key@: OPENAI_API_KEY (e.g., "sk-proj-...")
+--
+--   The provider checks the Credentials map first, then falls back to the OPENAI_API_KEY
+--   environment variable if the key is missing. This enables flexible configuration.
 module HaskLLM.OpenAI.GPT5
   ( -- * Shared interface & types
     Credentials (..),
@@ -58,6 +64,7 @@ import Network.HTTP.Client
     responseTimeoutNone,
   )
 import Network.HTTP.Client.TLS (tlsManagerSettings)
+import System.Environment (lookupEnv)
 
 -- | Provider tag for OpenAI GPT‑5 (Responses API).
 data OpenAI = OpenAI
@@ -133,10 +140,26 @@ instance LLMFormatChat OpenAI where
 --------------------------------------------------------------------------------
 -- Helpers
 
+-- | Get a required credential, with environment variable fallback.
+--   Checks the credentials map first, then falls back to environment variables.
 required :: Text -> Map Text Text -> IO Text
 required k m = case M.lookup k m of
   Just v -> pure v
-  Nothing -> fail ("Missing credential key: " <> T.unpack k)
+  Nothing -> do
+    -- Map credential keys to environment variable names
+    let envVar = case k of
+          "openai_api_key" -> "OPENAI_API_KEY"
+          _ -> T.unpack k -- Default: use the key name as-is
+    mEnv <- lookupEnv envVar
+    case mEnv of
+      Just val -> pure (T.pack val)
+      Nothing ->
+        fail $
+          "Missing credential key: "
+            <> T.unpack k
+            <> " (not in Credentials map, and environment variable "
+            <> envVar
+            <> " is not set)"
 
 -- | Make a text request with configurable timeout and retries
 makeTextRequest :: Credentials -> Text -> [ChatMessage] -> Maybe Int -> RequestConfig -> IO Text
