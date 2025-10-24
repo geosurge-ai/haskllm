@@ -63,7 +63,7 @@
               hsPkgs.cabal-gild
               pandoc
               poppler_utils
-              lhs2tex
+              # lhs2tex # broken on nixpkgs 20251024
               (texlive.combine { inherit (texlive) scheme-medium polytable lazylist; })
 
               # Terraform

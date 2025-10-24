@@ -2,5 +2,5 @@ packages: .
 
 source-repository-package
   type: git
-  location: https://github.com/geosurge-ai/pandoc-command-simple
-  tag: 59a2a98
+  location: git@github.com:geosurge-ai/pandoc-command-simple.git
+  branch: main
