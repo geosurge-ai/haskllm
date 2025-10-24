@@ -2,12 +2,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# OPTIONS_GHC -Wall #-}
 
-module CardPandoc
-  ( Body,
-    cardValueToBody,
-    -- \^ Value -> Either Text Body
-    bodyToCardValue,
-  )
+module CardPandoc (
+  Body,
+  cardValueToBody,
+  -- \^ Value -> Either Text Body
+  bodyToCardValue,
+)
 where
 
 -- \^ Body  -> Either Text Value
@@ -21,11 +21,11 @@ import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Vector qualified as V
-import Text.Pandoc.Definition
-  ( Block (..),
-    Inline (..),
-    nullAttr,
-  )
+import Text.Pandoc.Definition (
+  Block (..),
+  Inline (..),
+  nullAttr,
+ )
 import Text.Read (readMaybe)
 
 -- | A Pandoc 'Body' is just the list of blocks.
@@ -99,12 +99,12 @@ cardValueToBody = \case
     let items = [fieldItem (K.toText k) v | (k, v) <- KM.toList o]
      in Right [DefinitionList items]
   _ -> Left "cardValueToBody: expected a JSON object"
-  where
-    fieldItem k v =
-      let ty = fieldTy k
-       in ( [Str k],
-            [valueToBlocks ty v] -- exactly one definition; exactly one block-list inside it
-          )
+ where
+  fieldItem k v =
+    let ty = fieldTy k
+     in ( [Str k],
+          [valueToBlocks ty v] -- exactly one definition; exactly one block-list inside it
+        )
 
 --------------------------------------------------------------------------------
 -- Decoding: Body (DefinitionList) -> JSON (CardAtomic)
@@ -162,6 +162,6 @@ bodyToCardValue = \case
 -- small foldM to avoid importing Control.Monad
 foldlM :: (acc -> x -> Either e acc) -> acc -> [x] -> Either e acc
 foldlM f = go
-  where
-    go acc [] = Right acc
-    go acc (y : ys) = f acc y >>= \acc' -> go acc' ys
+ where
+  go acc [] = Right acc
+  go acc (y : ys) = f acc y >>= \acc' -> go acc' ys

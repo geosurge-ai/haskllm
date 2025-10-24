@@ -1,14 +1,15 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | CardAtomic JSON schema and utilities for testing MTG card generation
-module CardAtomic
-  ( cardAtomicSchema,
-    cardSpec,
-  )
+module CardAtomic (
+  cardAtomicSchema,
+  cardSpec,
+)
 where
 
 import Data.Aeson (Value, object, (.=))
 import Data.Text (Text)
+
 import HaskLLM (JSONSchemaSpec (..))
 
 -- | JSON Schema for MTG CardAtomic format used in tests

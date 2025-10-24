@@ -15,12 +15,13 @@
 --         }
 --   result <- respondText fallback undefined undefined messages  -- Uses Qwen
 -- @
-module HaskLLM.Phony
-  ( Phony (..),
-  )
+module HaskLLM.Phony (
+  Phony (..),
+)
 where
 
 import Control.Monad.IO.Class (MonadIO (..))
+
 import HaskLLM (LLMFormatChat (..))
 
 -- | Provider tag for a phony/mock LLM that always fails.

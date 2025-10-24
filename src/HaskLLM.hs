@@ -1,14 +1,14 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module HaskLLM
-  ( Credentials (..),
-    ChatMessage (..),
-    JSONSchemaSpec (..),
-    RequestConfig (..),
-    defaultRequestConfig,
-    LLMFormatChat (..),
-  )
+module HaskLLM (
+  Credentials (..),
+  ChatMessage (..),
+  JSONSchemaSpec (..),
+  RequestConfig (..),
+  defaultRequestConfig,
+  LLMFormatChat (..),
+)
 where
 
 import Control.Monad.IO.Class (MonadIO)

@@ -55,22 +55,23 @@
 --
 -- The nested approach works because each 'FallbackProvider' is itself a valid provider.
 -- This composition pattern extends to any number of providers while maintaining full type safety.
-module HaskLLM.FallbackLLM
-  ( FallbackProvider (..),
-    ProviderConfig (..),
+module HaskLLM.FallbackLLM (
+  FallbackProvider (..),
+  ProviderConfig (..),
 
-    -- * Ergonomic helpers for multi-provider chains
-    chain3,
-  )
+  -- * Ergonomic helpers for multi-provider chains
+  chain3,
+)
 where
 
 import Control.Exception (SomeException, catch)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Text (Text)
-import HaskLLM
-  ( Credentials,
-    LLMFormatChat (..),
-  )
+
+import HaskLLM (
+  Credentials,
+  LLMFormatChat (..),
+ )
 
 -- | Configuration for a single provider with its credentials and model name.
 data ProviderConfig provider = ProviderConfig
@@ -164,5 +165,5 @@ chain3 p1 c1 m1 p2 c2 m2 p3 c3 m3 =
   FallbackProvider
     (ProviderConfig p1 c1 m1)
     (ProviderConfig innerFallback undefined "")
-  where
-    innerFallback = FallbackProvider (ProviderConfig p2 c2 m2) (ProviderConfig p3 c3 m3)
+ where
+  innerFallback = FallbackProvider (ProviderConfig p2 c2 m2) (ProviderConfig p3 c3 m3)

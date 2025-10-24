@@ -14,14 +14,14 @@
 --   • It returns:  the assistant Pandoc plus the per‑attachment lists of 'SimpleOp'.
 --
 --   Use 'applyEditsToBodies' to apply the edits to your original attachments.
-module HaskLLM.PandocChat
-  ( Body,
-    respondPandocChat,
-    -- \^ core entry point
-    respondPandocChatWithTokens,
-    -- \^ core entry point with configurable max tokens
-    applyEditsToBodies,
-  )
+module HaskLLM.PandocChat (
+  Body,
+  respondPandocChat,
+  -- \^ core entry point
+  respondPandocChatWithTokens,
+  -- \^ core entry point with configurable max tokens
+  applyEditsToBodies,
+)
 where
 
 -- \^ apply [[SimpleOp]] to [[Block]]
@@ -35,21 +35,22 @@ import Data.Map.Strict qualified as M
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
-import HaskLLM
-  ( ChatMessage (..),
-    Credentials,
-    JSONSchemaSpec (..),
-    LLMFormatChat (..),
-  )
 import Text.Pandoc (Block (..), Pandoc (..), nullMeta)
 import Text.Pandoc.Class (runPure)
-import Text.Pandoc.Command.Simple
-  ( SimpleOp,
-    applySimpleOps,
-  )
+import Text.Pandoc.Command.Simple (
+  SimpleOp,
+  applySimpleOps,
+ )
 import Text.Pandoc.Options (def)
 import Text.Pandoc.Readers.Markdown (readMarkdown)
 import Text.Pandoc.Writers.Markdown (writeMarkdown)
+
+import HaskLLM (
+  ChatMessage (..),
+  Credentials,
+  JSONSchemaSpec (..),
+  LLMFormatChat (..),
+ )
 
 --------------------------------------------------------------------------------
 -- Types & helpers
@@ -273,9 +274,9 @@ applyEditsToBodies bodies patches
   | length bodies /= length patches =
       Left "applyEditsToBodies: length mismatch"
   | otherwise = traverse applyOne (zip bodies patches)
-  where
-    applyOne :: (Body, [SimpleOp]) -> Either Text Body
-    applyOne (b, ops) =
-      case applySimpleOps ops (Pandoc nullMeta b) of
-        Left err -> Left err
-        Right (Pandoc _ b') -> Right b'
+ where
+  applyOne :: (Body, [SimpleOp]) -> Either Text Body
+  applyOne (b, ops) =
+    case applySimpleOps ops (Pandoc nullMeta b) of
+      Left err -> Left err
+      Right (Pandoc _ b') -> Right b'

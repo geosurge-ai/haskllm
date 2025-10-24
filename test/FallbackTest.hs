@@ -6,19 +6,20 @@ import Control.Exception (SomeException, try)
 import Data.Aeson (object, (.=))
 import Data.Map.Strict qualified as M
 import Data.Text (Text)
-import HaskLLM
-  ( ChatMessage (..),
-    Credentials (..),
-    JSONSchemaSpec (..),
-    LLMFormatChat (..),
-  )
-import HaskLLM.FallbackLLM
-  ( FallbackProvider (..),
-    ProviderConfig (..),
-    chain3,
-  )
-import HaskLLM.Phony (Phony (..))
 import Test.Hspec
+
+import HaskLLM (
+  ChatMessage (..),
+  Credentials (..),
+  JSONSchemaSpec (..),
+  LLMFormatChat (..),
+ )
+import HaskLLM.FallbackLLM (
+  FallbackProvider (..),
+  ProviderConfig (..),
+  chain3,
+ )
+import HaskLLM.Phony (Phony (..))
 
 --------------------------------------------------------------------------------
 -- Mock "Success" provider for testing

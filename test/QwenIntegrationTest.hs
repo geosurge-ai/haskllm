@@ -5,14 +5,15 @@ module QwenIntegrationTest (spec) where
 import Data.Map.Strict qualified as M
 import Data.Text qualified as T
 import Data.Text.IO (hPutStrLn)
-import HaskLLM
-  ( ChatMessage (..),
-    Credentials (..),
-    LLMFormatChat (..),
-  )
-import HaskLLM.VLLM.QweN2_5 (Qwen (..))
 import System.IO (stderr)
 import Test.Hspec
+
+import HaskLLM (
+  ChatMessage (..),
+  Credentials (..),
+  LLMFormatChat (..),
+ )
+import HaskLLM.VLLM.QweN2_5 (Qwen (..))
 
 spec :: Spec
 spec = describe "Qwen Integration (blood-money)" $ do

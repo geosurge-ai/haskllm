@@ -4,11 +4,6 @@
 
 module Main (main) where
 
-import CardAtomic (cardSpec)
-import CardPandoc
-  ( bodyToCardValue,
-    cardValueToBody,
-  )
 import Control.Monad (replicateM)
 import Data.Aeson
 import Data.Aeson.KeyMap qualified as KM
@@ -24,27 +19,7 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Data.Time (defaultTimeLocale, formatTime, getCurrentTime)
 import Data.Vector qualified as V
-import FallbackTest qualified
 import GHC.Base (when)
-import HaskLLM
-  ( ChatMessage (..),
-    Credentials (..),
-    JSONSchemaSpec (..),
-    LLMFormatChat (..),
-  )
-import HaskLLM.OpenAI.GPT5
-  ( OpenAI (..),
-  )
-import HaskLLM.PandocChat
-  ( applyEditsToBodies,
-    respondPandocChatWithTokens,
-  )
-import LogUtils
-  ( logDebug,
-    logInfo,
-    withLogSection,
-  )
-import QwenIntegrationTest qualified
 import System.Directory (createDirectoryIfMissing, listDirectory)
 import System.Environment (lookupEnv)
 import System.FilePath (takeBaseName, takeExtension, (</>))
@@ -55,6 +30,32 @@ import Text.Pandoc.Class (runPure)
 import Text.Pandoc.Readers.Markdown (readMarkdown)
 import Text.Pandoc.Writers.Markdown (writeMarkdown)
 import Prelude
+
+import CardAtomic (cardSpec)
+import CardPandoc (
+  bodyToCardValue,
+  cardValueToBody,
+ )
+import FallbackTest qualified
+import HaskLLM (
+  ChatMessage (..),
+  Credentials (..),
+  JSONSchemaSpec (..),
+  LLMFormatChat (..),
+ )
+import HaskLLM.OpenAI.GPT5 (
+  OpenAI (..),
+ )
+import HaskLLM.PandocChat (
+  applyEditsToBodies,
+  respondPandocChatWithTokens,
+ )
+import LogUtils (
+  logDebug,
+  logInfo,
+  withLogSection,
+ )
+import QwenIntegrationTest qualified
 
 --------------------------------------------------------------------------------
 -- Configuration
@@ -292,15 +293,15 @@ pickKDistinct :: Int -> [a] -> IO [a]
 pickKDistinct k xs
   | k <= 0 = pure []
   | otherwise = go k [] xs
-  where
-    go 0 acc _ = pure (reverse acc)
-    go _ acc [] = pure (reverse acc)
-    go n acc pool = do
-      i <- randomRIO (0, length pool - 1)
-      let (h, t) = splitAt i pool
-      case t of
-        [] -> pure (reverse acc)
-        (x : xs') -> go (n - 1) (x : acc) (h ++ xs')
+ where
+  go 0 acc _ = pure (reverse acc)
+  go _ acc [] = pure (reverse acc)
+  go n acc pool = do
+    i <- randomRIO (0, length pool - 1)
+    let (h, t) = splitAt i pool
+    case t of
+      [] -> pure (reverse acc)
+      (x : xs') -> go (n - 1) (x : acc) (h ++ xs')
 
 ensureDistinctDecoys :: Text -> [Text] -> IO [Text]
 ensureDistinctDecoys target pool0 = do
@@ -598,10 +599,10 @@ pandocToMd p = either (error . show) id (runPure (writeMarkdown def p))
 -- Extract definition items from a field body (handles multiple DefinitionList blocks from InsertAfter operations)
 extractDefinitionItems :: [Block] -> [([Inline], [[Block]])]
 extractDefinitionItems = concatMap extractFromBlock
-  where
-    extractFromBlock :: Block -> [([Inline], [[Block]])]
-    extractFromBlock (DefinitionList items) = items
-    extractFromBlock other = error $ "Expected DefinitionList, got: " <> show other
+ where
+  extractFromBlock :: Block -> [([Inline], [[Block]])]
+  extractFromBlock (DefinitionList items) = items
+  extractFromBlock other = error $ "Expected DefinitionList, got: " <> show other
 
 -- Parse original generation context from full.json
 data OriginalContext = OriginalContext
@@ -650,8 +651,8 @@ extractOriginalContext fullJson = case fullJson of
 
     return $ OriginalContext theme archetype powerLevel
   _ -> fail "Full JSON is not an object"
-  where
-    asObject = \case Object x -> Just x; _ -> Nothing
+ where
+  asObject = \case Object x -> Just x; _ -> Nothing
 
 -- Parse a previously logged *.full.json into (cardName, original context, card JSON Value)
 loadCardFromFull :: FilePath -> IO (Text, Value, Value, OriginalContext)
@@ -670,8 +671,8 @@ loadCardFromFull fullPath = do
             pure (nm, v, cardV, ctx)
           _ -> fail "Missing generation.response card JSON"
       _ -> fail "full.json not an object"
-  where
-    asObject = \case Object x -> Just x; _ -> Nothing
+ where
+  asObject = \case Object x -> Just x; _ -> Nothing
 
 -- | Test PandocChat end-to-end edit flow with card structure editing
 testPandocChatEdits :: Credentials -> IO ()
@@ -861,6 +862,6 @@ main = hspec $ do
         Just key' -> do
           let creds = Credentials (M.fromList [("openai_api_key", T.pack key')])
           testPandocChatEdits creds
-  where
-    verdict True = "  ✓"
-    verdict False = "  ✗"
+ where
+  verdict True = "  ✓"
+  verdict False = "  ✗"

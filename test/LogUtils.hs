@@ -1,14 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 -- | Professional logging utilities with environment variable configuration
-module LogUtils
-  ( logDebug,
-    logInfo,
-    logWarning,
-    logError,
-    logSection,
-    withLogSection,
-  )
+module LogUtils (
+  logDebug,
+  logInfo,
+  logWarning,
+  logError,
+  logSection,
+  withLogSection,
+)
 where
 
 import Control.Monad (when)

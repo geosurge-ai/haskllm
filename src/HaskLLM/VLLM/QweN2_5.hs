@@ -10,20 +10,20 @@
 --   The provider checks the Credentials map first, then falls back to environment
 --   variables if a key is missing. If base_url is not provided, uses the default
 --   production URL. The /02/ route for QweN2.5 is automatically appended if needed.
-module HaskLLM.VLLM.QweN2_5
-  ( Qwen (..),
-  )
+module HaskLLM.VLLM.QweN2_5 (
+  Qwen (..),
+)
 where
 
 import Control.Exception (SomeException, catch)
 import Control.Monad.IO.Class (MonadIO (..))
-import Data.Aeson
-  ( Value (..),
-    eitherDecode,
-    encode,
-    object,
-    (.=),
-  )
+import Data.Aeson (
+  Value (..),
+  eitherDecode,
+  encode,
+  object,
+  (.=),
+ )
 import Data.Aeson.KeyMap qualified as KM
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (toList)
@@ -31,30 +31,31 @@ import Data.Map.Strict qualified as M
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
-import HaskLLM
-  ( ChatMessage (..),
-    Credentials (..),
-    JSONSchemaSpec (..),
-    LLMFormatChat (..),
-    RequestConfig (..),
-    defaultRequestConfig,
-  )
-import Network.HTTP.Client
-  ( Request,
-    RequestBody (..),
-    httpLbs,
-    method,
-    newManager,
-    parseRequest,
-    requestBody,
-    requestHeaders,
-    responseBody,
-    responseTimeout,
-    responseTimeoutMicro,
-    responseTimeoutNone,
-  )
+import Network.HTTP.Client (
+  Request,
+  RequestBody (..),
+  httpLbs,
+  method,
+  newManager,
+  parseRequest,
+  requestBody,
+  requestHeaders,
+  responseBody,
+  responseTimeout,
+  responseTimeoutMicro,
+  responseTimeoutNone,
+ )
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import System.Environment (lookupEnv)
+
+import HaskLLM (
+  ChatMessage (..),
+  Credentials (..),
+  JSONSchemaSpec (..),
+  LLMFormatChat (..),
+  RequestConfig (..),
+  defaultRequestConfig,
+ )
 
 -- | Provider tag for vLLM/Qwen (OpenAI-compatible server).
 data Qwen = Qwen
@@ -65,19 +66,19 @@ data Qwen = Qwen
 -- | Retry an IO action with exponential backoff
 retryWithBackoff :: Int -> IO a -> IO a
 retryWithBackoff maxRetries action = go maxRetries (1 :: Int)
-  where
-    go 0 _ = action -- Last attempt, don't catch
-    go retriesLeft delay = do
-      result <- catch (Right <$> action) (pure . Left)
-      case result of
-        Right success -> pure success
-        Left (_ :: SomeException) -> do
-          -- Simple backoff: wait delay seconds, then double it
-          if delay <= 8 -- Cap at 8 seconds
-            then do
-              -- In a real implementation, you'd use threadDelay, but for simplicity:
-              go (retriesLeft - 1) (delay * 2)
-            else go (retriesLeft - 1) delay
+ where
+  go 0 _ = action -- Last attempt, don't catch
+  go retriesLeft delay = do
+    result <- catch (Right <$> action) (pure . Left)
+    case result of
+      Right success -> pure success
+      Left (_ :: SomeException) -> do
+        -- Simple backoff: wait delay seconds, then double it
+        if delay <= 8 -- Cap at 8 seconds
+          then do
+            -- In a real implementation, you'd use threadDelay, but for simplicity:
+            go (retriesLeft - 1) (delay * 2)
+          else go (retriesLeft - 1) delay
 
 -- | Configure timeout for a request based on RequestConfig
 configureTimeout :: RequestConfig -> Request -> Request
