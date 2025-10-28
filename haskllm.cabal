@@ -4,10 +4,17 @@ version: 0.2.0.0
 synopsis: Haskell LLM client library
 description: A Haskell library for interacting with LLM providers including OpenAI GPT-5 and vLLM/Qwen
 license: MIT
-author: Author
-maintainer: maintainer@example.com
+author: Jons Mostovojs
+maintainer: jons@geosurge.ai
 category: AI
-build-type: Simple
+build-type: Custom
+
+custom-setup
+  setup-depends:
+    Cabal >=3.6,
+    base >=4.14,
+    directory,
+    filepath,
 
 library
   exposed-modules:

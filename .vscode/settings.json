@@ -1,0 +1,13 @@
+{
+  // --- Haskell formatting ---
+  "haskell.formattingProvider": "fourmolu",
+  "[haskell]": {
+    "editor.defaultFormatter": "haskell.haskell",
+    "editor.formatOnSave": true
+  },
+  // optional but handy
+  "editor.formatOnPaste": true,
+  "editor.codeActionsOnSave": {
+    "source.organizeImports": "explicit"
+  }
+}

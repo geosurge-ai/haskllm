@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+set -e
+
+echo "🔍 Running pre-push checks..."
+
+# Get staged/changed Haskell files
+changed_files=$(git diff --name-only --diff-filter=AM HEAD @{push} 2>/dev/null | grep '\.hs$' || true)
+
+if [ -z "$changed_files" ]; then
+  echo "✅ No Haskell files changed"
+  exit 0
+fi
+
+echo "📝 Formatting with fourmolu..."
+echo "$changed_files" | xargs fourmolu -i
+
+echo "🔍 Applying hlint suggestions..."
+echo "$changed_files" | while IFS= read -r file; do
+  hlint "$file" --refactor --refactor-options="--inplace" 2>/dev/null || true
+done
+
+echo "📝 Reformatting after hlint..."
+echo "$changed_files" | xargs fourmolu -i
+
+# Check if changes were made
+if ! git diff --quiet; then
+  echo "❌ Formatting/linting made changes!"
+  echo "   Files modified: $(git diff --name-only | tr '\n' ' ')"
+  echo "   Please stage the changes and try again."
+  exit 1
+fi
+
+echo "🔨 Building with cabal to check for warnings/errors..."
+if ! cabal build 2>&1 | tee /tmp/cabal-build.log; then
+  echo "❌ Cabal build failed!"
+  exit 1
+fi
+
+# Check for warnings (treat warnings as errors)
+if grep -iE "warning:|Warning:" /tmp/cabal-build.log | grep -v "Git tree.*is dirty" | grep -v "ld: warning.*dylib"; then
+  echo "❌ Build has warnings (warnings treated as errors)!"
+  echo "   Fix warnings before pushing."
+  exit 1
+fi
+
+echo "✅ All checks passed!"
+
