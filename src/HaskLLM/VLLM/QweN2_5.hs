@@ -27,6 +27,7 @@ import Data.Aeson (
 import Data.Aeson.KeyMap qualified as KM
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (toList)
+import Data.Maybe (fromMaybe)
 import Data.Map.Strict qualified as M
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -247,7 +248,7 @@ makeJSONRequest (Credentials cred) modelName msgs (JSONSchemaSpec nm sch isStric
     Left e -> fail ("vLLM: invalid JSON response: " <> e)
     Right ok -> pure ok
 
-  let txt = extractChatContent js
+  let txt = stripCodeFence (extractChatContent js)
   case eitherDecode (LBS.fromStrict $ TE.encodeUtf8 txt) :: Either String Value of
     Right v -> pure v
     Left e -> fail ("vLLM: schema-enforced output was not valid JSON: " <> e)
@@ -278,3 +279,13 @@ extractChatContent (Object o)
     Just (String contentText) <- KM.lookup "content" msg =
       contentText
 extractChatContent _ = ""
+
+-- | Strip markdown code fences (```json ... ``` or ``` ... ```) from LLM output.
+--   Qwen sometimes wraps JSON schema responses in code fences despite being asked
+--   for raw JSON via response_format.
+stripCodeFence :: Text -> Text
+stripCodeFence t = case T.stripPrefix "```" (T.strip t) of
+  Nothing -> T.strip t
+  Just rest ->
+    let body = T.drop 1 (T.dropWhile (/= '\n') rest)
+     in fromMaybe body $ T.stripSuffix "```" (T.strip body)
