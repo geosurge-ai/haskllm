@@ -13,6 +13,8 @@ import HaskLLM (
   Credentials (..),
   JSONSchemaSpec (..),
   LLMFormatChat (..),
+  LLMResponse (..),
+  TokenUsage (..),
  )
 import HaskLLM.FallbackLLM (
   FallbackProvider (..),
@@ -38,6 +40,32 @@ instance LLMFormatChat MockSuccess where
   respondJSONWithConfig _ _ modelName _ _ _ = pure $ object ["mock" .= ("success" :: Text), "model" .= modelName]
   respondTextWithTokensAndConfig _ _ modelName _ _ _ = pure $ "MockSuccess response from " <> modelName
   respondJSONWithTokensAndConfig _ _ modelName _ _ _ _ = pure $ object ["mock" .= ("success" :: Text), "model" .= modelName]
+  respondTextDetailed _ _ modelName _ _ _ =
+    pure $
+      LLMResponse
+        { responseContent = "MockSuccess response from " <> modelName,
+          responseUsage = Just mockUsage,
+          responseModel = modelName,
+          responseProvider = "mock"
+        }
+  respondJSONDetailed _ _ modelName _ _ _ _ =
+    pure $
+      LLMResponse
+        { responseContent = object ["mock" .= ("success" :: Text), "model" .= modelName],
+          responseUsage = Just mockUsage,
+          responseModel = modelName,
+          responseProvider = "mock"
+        }
+
+mockUsage :: TokenUsage
+mockUsage =
+  TokenUsage
+    { inputTokens = Just 10,
+      outputTokens = Just 5,
+      totalTokens = Just 15,
+      cachedInputTokens = Nothing,
+      reasoningTokens = Nothing
+    }
 
 --------------------------------------------------------------------------------
 -- Test Suite
@@ -196,6 +224,19 @@ spec = describe "HaskLLM.FallbackLLM" $ do
 
       result <- respondJSONWithTokens fallback undefined undefined testMessages testSchema (Just 100)
       result `shouldBe` object ["mock" .= ("success" :: Text), "model" .= ("success" :: Text)]
+
+    it "preserves detailed metadata from the provider that succeeds" $ do
+      let fallback =
+            FallbackProvider
+              { primary = ProviderConfig Phony dummyCreds "phony",
+                secondary = ProviderConfig MockSuccess dummyCreds "success"
+              }
+
+      result <- respondTextDetailed fallback undefined undefined testMessages (Just 100) undefined
+      responseContent result `shouldBe` "MockSuccess response from success"
+      responseUsage result `shouldBe` Just mockUsage
+      responseModel result `shouldBe` "success"
+      responseProvider result `shouldBe` "mock"
 
 --------------------------------------------------------------------------------
 -- Helper

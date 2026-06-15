@@ -20,6 +20,10 @@ module HaskLLM.PandocChat (
   -- \^ core entry point
   respondPandocChatWithTokens,
   -- \^ core entry point with configurable max tokens
+  respondPandocChatDetailed,
+  -- \^ core entry point with normalized response metadata
+  respondPandocChatWithTokensDetailed,
+  -- \^ core entry point with max tokens and normalized response metadata
   applyEditsToBodies,
 )
 where
@@ -50,6 +54,8 @@ import HaskLLM (
   Credentials,
   JSONSchemaSpec (..),
   LLMFormatChat (..),
+  LLMResponse (..),
+  defaultRequestConfig,
  )
 
 --------------------------------------------------------------------------------
@@ -182,6 +188,15 @@ parseAssistantAndPatches =
     ps <- o .: "patches"
     pure (a, ps)
 
+mapResponseContent :: (a -> b) -> LLMResponse a -> LLMResponse b
+mapResponseContent f resp =
+  LLMResponse
+    { responseContent = f (responseContent resp),
+      responseUsage = responseUsage resp,
+      responseModel = responseModel resp,
+      responseProvider = responseProvider resp
+    }
+
 --------------------------------------------------------------------------------
 -- Public API
 --------------------------------------------------------------------------------
@@ -224,20 +239,52 @@ respondPandocChatWithTokens ::
   Maybe Int ->
   m (Map Text Pandoc, Maybe [[SimpleOp]])
 respondPandocChatWithTokens prov creds model prompts mBodies mMaxTokens = do
+  responseContent <$> respondPandocChatWithTokensDetailed prov creds model prompts mBodies mMaxTokens
+
+-- | Like 'respondPandocChat' but includes normalized provider response metadata.
+respondPandocChatDetailed ::
+  (LLMFormatChat provider, MonadIO m, MonadFail m) =>
+  provider ->
+  Credentials ->
+  -- | model identifier
+  Text ->
+  -- | prompts: system/user/aux
+  Map Text Pandoc ->
+  -- | attachments to be edited
+  Maybe [Body] ->
+  m (LLMResponse (Map Text Pandoc, Maybe [[SimpleOp]]))
+respondPandocChatDetailed prov creds model prompts mBodies =
+  respondPandocChatWithTokensDetailed prov creds model prompts mBodies Nothing
+
+-- | Like 'respondPandocChatWithTokens' but includes normalized provider response metadata.
+respondPandocChatWithTokensDetailed ::
+  (LLMFormatChat provider, MonadIO m, MonadFail m) =>
+  provider ->
+  Credentials ->
+  -- | model identifier
+  Text ->
+  -- | prompts: system/user/aux
+  Map Text Pandoc ->
+  -- | attachments to be edited
+  Maybe [Body] ->
+  -- | max tokens (Nothing uses provider default)
+  Maybe Int ->
+  m (LLMResponse (Map Text Pandoc, Maybe [[SimpleOp]]))
+respondPandocChatWithTokensDetailed prov creds model prompts mBodies mMaxTokens = do
   let baseMsgs = promptsToMessages prompts
   case mBodies of
     Nothing -> do
       -- Plain chat, no patches requested.
-      txt <- respondTextWithTokens prov creds model baseMsgs mMaxTokens
-      case runPure (readMarkdown def txt) of
-        Right p -> pure (M.singleton "assistant" p, Nothing)
+      resp <- respondTextDetailed prov creds model baseMsgs mMaxTokens defaultRequestConfig
+      case runPure (readMarkdown def (responseContent resp)) of
+        Right p -> pure $ mapResponseContent (const (M.singleton "assistant" p, Nothing)) resp
         Left e -> fail ("Failed to parse assistant markdown: " <> show e)
     Just bodies
       | null bodies -> do
           -- Nothing to edit; act like plain chat but return an empty patch matrix.
-          txt <- respondTextWithTokens prov creds model baseMsgs mMaxTokens
-          case runPure (readMarkdown def txt) of
-            Right p -> pure (M.singleton "assistant" p, Just [])
+          resp <- respondTextDetailed prov creds model baseMsgs mMaxTokens defaultRequestConfig
+          case runPure (readMarkdown def (responseContent resp)) of
+            Right p -> pure $ mapResponseContent (const (M.singleton "assistant" p, Just [])) resp
             Left e -> fail ("Failed to parse assistant markdown: " <> show e)
       | otherwise -> do
           -- Augment prompts with a strict editing contract + attachments user message.
@@ -246,12 +293,12 @@ respondPandocChatWithTokens prov creds model prompts mBodies mMaxTokens = do
                   : (baseMsgs ++ [ChatMessage "user" (attachmentsUserMessage bodies)])
               schema = schemaForPatches (length bodies)
 
-          val <- respondJSONWithTokens prov creds model msgs schema mMaxTokens
+          resp <- respondJSONDetailed prov creds model msgs schema mMaxTokens defaultRequestConfig
 
           (assistantTxt, patches) <-
-            case parseAssistantAndPatches val of
+            case parseAssistantAndPatches (responseContent resp) of
               Right ok -> pure ok
-              Left e -> fail ("Provider JSON parse error: " <> e <> "\nRaw LLM response: " <> T.unpack (TE.decodeUtf8 . LBS.toStrict $ encode val))
+              Left e -> fail ("Provider JSON parse error: " <> e <> "\nRaw LLM response: " <> T.unpack (TE.decodeUtf8 . LBS.toStrict $ encode (responseContent resp)))
 
           pdoc <-
             case runPure (readMarkdown def assistantTxt) of
@@ -260,7 +307,7 @@ respondPandocChatWithTokens prov creds model prompts mBodies mMaxTokens = do
 
           if length patches /= length bodies
             then fail "Mismatch: patches length does not match attachments length"
-            else pure (M.singleton "assistant" pdoc, Just patches)
+            else pure $ mapResponseContent (const (M.singleton "assistant" pdoc, Just patches)) resp
 
 -- | Apply patch lists to the corresponding bodies.
 --   Each inner list corresponds to the same-index body. Empty list = no edits.

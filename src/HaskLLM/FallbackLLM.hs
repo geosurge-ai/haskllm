@@ -135,6 +135,12 @@ instance (LLMFormatChat p1, LLMFormatChat p2) => LLMFormatChat (FallbackProvider
   respondJSONWithTokensAndConfig (FallbackProvider prim sec) _ _ msgs schema mTokens config =
     withFallback prim sec $ \p c m -> respondJSONWithTokensAndConfig p c m msgs schema mTokens config
 
+  respondTextDetailed (FallbackProvider prim sec) _ _ msgs mTokens config =
+    withFallback prim sec $ \p c m -> respondTextDetailed p c m msgs mTokens config
+
+  respondJSONDetailed (FallbackProvider prim sec) _ _ msgs schema mTokens config =
+    withFallback prim sec $ \p c m -> respondJSONDetailed p c m msgs schema mTokens config
+
 --------------------------------------------------------------------------------
 -- Ergonomic helpers for multi-provider chains
 --------------------------------------------------------------------------------

@@ -6,6 +6,8 @@ module HaskLLM (
   ChatMessage (..),
   JSONSchemaSpec (..),
   RequestConfig (..),
+  TokenUsage (..),
+  LLMResponse (..),
   defaultRequestConfig,
   LLMFormatChat (..),
 )
@@ -61,6 +63,29 @@ data JSONSchemaSpec = JSONSchemaSpec
     schema :: Value,
     -- | Enforce exact conformance when supported
     strict :: Bool
+  }
+  deriving (Show, Eq, Generic)
+
+-- | Normalized provider-reported token usage.
+--
+-- Providers do not always return all fields, so every field is optional. This
+-- type intentionally avoids price information; consumers can apply their own
+-- pricing policy upstream.
+data TokenUsage = TokenUsage
+  { inputTokens :: Maybe Int,
+    outputTokens :: Maybe Int,
+    totalTokens :: Maybe Int,
+    cachedInputTokens :: Maybe Int,
+    reasoningTokens :: Maybe Int
+  }
+  deriving (Show, Eq, Generic)
+
+-- | A generated response plus normalized metadata from the provider call.
+data LLMResponse a = LLMResponse
+  { responseContent :: a,
+    responseUsage :: Maybe TokenUsage,
+    responseModel :: Text,
+    responseProvider :: Text
   }
   deriving (Show, Eq, Generic)
 
@@ -150,6 +175,29 @@ class LLMFormatChat provider where
     RequestConfig ->
     m Value
 
+  -- | Plain chat with normalized response metadata.
+  respondTextDetailed ::
+    (MonadIO m) =>
+    provider ->
+    Credentials ->
+    Text ->
+    [ChatMessage] ->
+    Maybe Int ->
+    RequestConfig ->
+    m (LLMResponse Text)
+
+  -- | JSON chat with normalized response metadata.
+  respondJSONDetailed ::
+    (MonadIO m) =>
+    provider ->
+    Credentials ->
+    Text ->
+    [ChatMessage] ->
+    JSONSchemaSpec ->
+    Maybe Int ->
+    RequestConfig ->
+    m (LLMResponse Value)
+
   -- Default implementations for backwards compatibility
   respondTextWithTokens prov creds model msgs _ = respondText prov creds model msgs
   respondJSONWithTokens prov creds model msgs schema _ = respondJSON prov creds model msgs schema
@@ -159,3 +207,21 @@ class LLMFormatChat provider where
   respondJSONWithConfig prov creds model msgs schema _ = respondJSON prov creds model msgs schema
   respondTextWithTokensAndConfig prov creds model msgs tokens _ = respondTextWithTokens prov creds model msgs tokens
   respondJSONWithTokensAndConfig prov creds model msgs schema tokens _ = respondJSONWithTokens prov creds model msgs schema tokens
+  respondTextDetailed prov creds model msgs tokens config = do
+    txt <- respondTextWithTokensAndConfig prov creds model msgs tokens config
+    pure $
+      LLMResponse
+        { responseContent = txt,
+          responseUsage = Nothing,
+          responseModel = model,
+          responseProvider = "unknown"
+        }
+  respondJSONDetailed prov creds model msgs schema tokens config = do
+    val <- respondJSONWithTokensAndConfig prov creds model msgs schema tokens config
+    pure $
+      LLMResponse
+        { responseContent = val,
+          responseUsage = Nothing,
+          responseModel = model,
+          responseProvider = "unknown"
+        }
