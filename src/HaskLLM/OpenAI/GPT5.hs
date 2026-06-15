@@ -32,12 +32,14 @@ import Data.Aeson (
   object,
   (.=),
  )
+import Data.Aeson.Key qualified as K
 import Data.Aeson.KeyMap qualified as KM
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (toList)
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as M
 import Data.Maybe (fromMaybe)
+import Data.Scientific (toBoundedInteger)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
@@ -63,7 +65,9 @@ import HaskLLM (
   Credentials (..),
   JSONSchemaSpec (..),
   LLMFormatChat (..),
+  LLMResponse (..),
   RequestConfig (..),
+  TokenUsage (..),
   defaultRequestConfig,
  )
 
@@ -100,43 +104,53 @@ instance LLMFormatChat OpenAI where
   -- Responses API text output (no schema).
   respondText _ creds modelName msgs =
     liftIO $
-      makeTextRequest creds modelName msgs Nothing defaultRequestConfig
+      responseContent <$> makeTextRequestDetailed creds modelName msgs Nothing defaultRequestConfig
 
   -- Responses API structured output with JSON schema.
   respondJSON _ creds modelName msgs schema =
     liftIO $
-      makeJSONRequest creds modelName msgs schema Nothing defaultRequestConfig
+      responseContent <$> makeJSONRequestDetailed creds modelName msgs schema Nothing defaultRequestConfig
 
   -- Responses API text output with configurable max tokens.
   respondTextWithTokens _ creds modelName msgs mMaxTokens =
     liftIO $
-      makeTextRequest creds modelName msgs mMaxTokens defaultRequestConfig
+      responseContent <$> makeTextRequestDetailed creds modelName msgs mMaxTokens defaultRequestConfig
 
   -- Responses API structured output with JSON schema and configurable max tokens.
   respondJSONWithTokens _ creds modelName msgs schema mMaxTokens =
     liftIO $
-      makeJSONRequest creds modelName msgs schema mMaxTokens defaultRequestConfig
+      responseContent <$> makeJSONRequestDetailed creds modelName msgs schema mMaxTokens defaultRequestConfig
 
   -- New configurable methods
   respondTextWithConfig _ creds modelName msgs config =
     liftIO $
       retryWithBackoff (maxRetries config) $
-        makeTextRequest creds modelName msgs Nothing config
+        responseContent <$> makeTextRequestDetailed creds modelName msgs Nothing config
 
   respondJSONWithConfig _ creds modelName msgs schema config =
     liftIO $
       retryWithBackoff (maxRetries config) $
-        makeJSONRequest creds modelName msgs schema Nothing config
+        responseContent <$> makeJSONRequestDetailed creds modelName msgs schema Nothing config
 
   respondTextWithTokensAndConfig _ creds modelName msgs mMaxTokens config =
     liftIO $
       retryWithBackoff (maxRetries config) $
-        makeTextRequest creds modelName msgs mMaxTokens config
+        responseContent <$> makeTextRequestDetailed creds modelName msgs mMaxTokens config
 
   respondJSONWithTokensAndConfig _ creds modelName msgs schema mMaxTokens config =
     liftIO $
       retryWithBackoff (maxRetries config) $
-        makeJSONRequest creds modelName msgs schema mMaxTokens config
+        responseContent <$> makeJSONRequestDetailed creds modelName msgs schema mMaxTokens config
+
+  respondTextDetailed _ creds modelName msgs mMaxTokens config =
+    liftIO $
+      retryWithBackoff (maxRetries config) $
+        makeTextRequestDetailed creds modelName msgs mMaxTokens config
+
+  respondJSONDetailed _ creds modelName msgs schema mMaxTokens config =
+    liftIO $
+      retryWithBackoff (maxRetries config) $
+        makeJSONRequestDetailed creds modelName msgs schema mMaxTokens config
 
 --------------------------------------------------------------------------------
 -- Helpers
@@ -163,8 +177,8 @@ required k m = case M.lookup k m of
             <> " is not set)"
 
 -- | Make a text request with configurable timeout and retries
-makeTextRequest :: Credentials -> Text -> [ChatMessage] -> Maybe Int -> RequestConfig -> IO Text
-makeTextRequest (Credentials cred) modelName msgs mMaxTokens config = do
+makeTextRequestDetailed :: Credentials -> Text -> [ChatMessage] -> Maybe Int -> RequestConfig -> IO (LLMResponse Text)
+makeTextRequestDetailed (Credentials cred) modelName msgs mMaxTokens config = do
   apiKey <- required "openai_api_key" cred
   manager <- newManager tlsManagerSettings
   req0 <- parseRequest "https://api.openai.com/v1/responses"
@@ -193,11 +207,18 @@ makeTextRequest (Credentials cred) modelName msgs mMaxTokens config = do
 
   case eitherDecode raw :: Either String Value of
     Left e -> fail ("OpenAI: invalid JSON response: " <> e)
-    Right js -> pure (extractResponsesText js)
+    Right js ->
+      pure $
+        LLMResponse
+          { responseContent = extractResponsesText js,
+            responseUsage = extractResponsesUsage js,
+            responseModel = modelName,
+            responseProvider = "openai"
+          }
 
 -- | Make a JSON request with configurable timeout and retries
-makeJSONRequest :: Credentials -> Text -> [ChatMessage] -> JSONSchemaSpec -> Maybe Int -> RequestConfig -> IO Value
-makeJSONRequest (Credentials cred) modelName msgs (JSONSchemaSpec nm sch isStrict) mMaxTokens config = do
+makeJSONRequestDetailed :: Credentials -> Text -> [ChatMessage] -> JSONSchemaSpec -> Maybe Int -> RequestConfig -> IO (LLMResponse Value)
+makeJSONRequestDetailed (Credentials cred) modelName msgs (JSONSchemaSpec nm sch isStrict) mMaxTokens config = do
   apiKey <- required "openai_api_key" cred
   manager <- newManager tlsManagerSettings
   req0 <- parseRequest "https://api.openai.com/v1/responses"
@@ -239,7 +260,14 @@ makeJSONRequest (Credentials cred) modelName msgs (JSONSchemaSpec nm sch isStric
   let txt = extractResponsesText js
 
   case eitherDecode (LBS.fromStrict $ TE.encodeUtf8 txt) :: Either String Value of
-    Right v -> pure v
+    Right v ->
+      pure $
+        LLMResponse
+          { responseContent = v,
+            responseUsage = extractResponsesUsage js,
+            responseModel = modelName,
+            responseProvider = "openai"
+          }
     Left e -> fail ("OpenAI: schema-enforced output was not valid JSON: " <> e <> "\nRaw response text: " <> T.unpack txt)
 
 -- Convert ChatMessage to JSON Value for API request
@@ -268,3 +296,31 @@ extractResponsesText (Object o)
           _ -> []
   | otherwise = ""
 extractResponsesText _ = ""
+
+extractResponsesUsage :: Value -> Maybe TokenUsage
+extractResponsesUsage (Object o)
+  | Just usage <- KM.lookup "usage" o =
+      Just $
+        TokenUsage
+          { inputTokens = lookupInt "input_tokens" usage,
+            outputTokens = lookupInt "output_tokens" usage,
+            totalTokens = lookupInt "total_tokens" usage,
+            cachedInputTokens = lookupNestedInt ["input_tokens_details", "cached_tokens"] usage,
+            reasoningTokens = lookupNestedInt ["output_tokens_details", "reasoning_tokens"] usage
+          }
+extractResponsesUsage _ = Nothing
+
+lookupInt :: Text -> Value -> Maybe Int
+lookupInt key (Object o) = case KM.lookup (fromTextKey key) o of
+  Just (Number n) -> toBoundedInteger n
+  _ -> Nothing
+lookupInt _ _ = Nothing
+
+lookupNestedInt :: [Text] -> Value -> Maybe Int
+lookupNestedInt [] _ = Nothing
+lookupNestedInt [key] value = lookupInt key value
+lookupNestedInt (key : rest) (Object o) = KM.lookup (fromTextKey key) o >>= lookupNestedInt rest
+lookupNestedInt _ _ = Nothing
+
+fromTextKey :: Text -> K.Key
+fromTextKey = K.fromText
