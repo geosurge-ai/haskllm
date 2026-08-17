@@ -73,6 +73,16 @@ textResponse t =
       "usage" .= usageValue 10 5
     ]
 
+-- | A @reasoning@ output item, as emitted by reasoning models (e.g. GPT-5).
+--   The loop must echo these back verbatim when continuing a tool turn.
+reasoningItem :: Text -> Value
+reasoningItem rid =
+  object
+    [ "type" .= ("reasoning" :: Text),
+      "id" .= rid,
+      "summary" .= ([] :: [Value])
+    ]
+
 -- | A single @function_call@ output item.
 callItem :: Text -> Text -> Text -> Value
 callItem callId nm args =
@@ -124,9 +134,10 @@ spec = describe "OpenAI tool loop (scripted transport)" $ do
     toolTrace result `shouldBe` []
     length usages `shouldBe` 1
 
-  it "executes a tool call, echoes it back with its output, and returns the final text" $ do
-    let call = callItem "call_1" "add" "{\"x\":2,\"y\":3}"
-    (seen, transport) <- mkTransport [callResponse [call], textResponse "the answer is 5"]
+  it "echoes the full prior output (including reasoning items) with tool outputs appended" $ do
+    let reasoning = reasoningItem "rs_1"
+        call = callItem "call_1" "add" "{\"x\":2,\"y\":3}"
+    (seen, transport) <- mkTransport [callResponse [reasoning, call], textResponse "the answer is 5"]
     (result, usages) <- runToolLoop transport [addTool] [userItem "add 2 3"] 5
 
     finalText result `shouldBe` "the answer is 5"
@@ -134,7 +145,7 @@ spec = describe "OpenAI tool loop (scripted transport)" $ do
 
     inputs <- readIORef seen
     length inputs `shouldBe` 2
-    inputs !! 1 `shouldBe` [userItem "add 2 3", call, outputItem "call_1" "5"]
+    inputs !! 1 `shouldBe` [userItem "add 2 3", reasoning, call, outputItem "call_1" "5"]
 
     let usage = aggregateUsage usages
     (usage >>= inputTokens) `shouldBe` Just 30
@@ -149,7 +160,7 @@ spec = describe "OpenAI tool loop (scripted transport)" $ do
 
     map invokedOutput (toolTrace result) `shouldBe` ["3", "7"]
     inputs <- readIORef seen
-    inputs !! 1 `shouldBe` [c1, outputItem "c1" "3", c2, outputItem "c2" "7"]
+    inputs !! 1 `shouldBe` [c1, c2, outputItem "c1" "3", outputItem "c2" "7"]
 
   it "feeds unknown-tool errors back to the model" $ do
     (seen, transport) <- mkTransport [callResponse [callItem "c1" "bogus" "{}"], textResponse "recovered"]

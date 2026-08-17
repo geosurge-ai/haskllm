@@ -408,9 +408,7 @@ toolToValue (Tool spec _) =
 
 -- | A @function_call@ item extracted from a Responses API response.
 data FunctionCall = FunctionCall
-  { -- | Raw output item, echoed back into the next request's input.
-    fcItem :: Value,
-    fcCallId :: Text,
+  { fcCallId :: Text,
     fcName :: Text,
     fcArguments :: Text
   }
@@ -446,11 +444,14 @@ runToolLoop transport tools initialItems maxRounds = go initialItems [] [] maxRo
               )
           calls -> do
             newInvocations <- mapM (dispatchToolCall tools) calls
+            -- Reasoning models require the complete prior output sequence
+            -- (including reasoning items) when continuing a stateless tool
+            -- turn, so echo every output item back before the tool outputs.
             let feedback =
-                  concat
-                    [ [fcItem call, functionCallOutput (fcCallId call) (invokedOutput inv)]
-                    | (call, inv) <- zip calls newInvocations
-                    ]
+                  extractOutputItems js
+                    <> [ functionCallOutput (fcCallId call) (invokedOutput inv)
+                       | (call, inv) <- zip calls newInvocations
+                       ]
             go (items <> feedback) (invocations <> newInvocations) usages' (roundsLeft - 1)
 
 -- | Execute one model-requested tool call. Unknown tools and unparseable
@@ -483,15 +484,19 @@ functionCallOutput callId output =
       "output" .= output
     ]
 
+-- | Extract the raw @output@ items from a Responses API response.
+extractOutputItems :: Value -> [Value]
+extractOutputItems (Object o)
+  | Just (Array arr) <- KM.lookup "output" o = toList arr
+extractOutputItems _ = []
+
 -- | Extract @function_call@ items from a Responses API response.
 extractFunctionCalls :: Value -> [FunctionCall]
-extractFunctionCalls (Object o)
-  | Just (Array arr) <- KM.lookup "output" o =
-      [ FunctionCall v callId nm args
-      | v@(Object oi) <- toList arr,
-        Just (String "function_call") <- [KM.lookup "type" oi],
-        Just (String callId) <- [KM.lookup "call_id" oi],
-        Just (String nm) <- [KM.lookup "name" oi],
-        Just (String args) <- [KM.lookup "arguments" oi]
-      ]
-extractFunctionCalls _ = []
+extractFunctionCalls js =
+  [ FunctionCall callId nm args
+  | Object oi <- extractOutputItems js,
+    Just (String "function_call") <- [KM.lookup "type" oi],
+    Just (String callId) <- [KM.lookup "call_id" oi],
+    Just (String nm) <- [KM.lookup "name" oi],
+    Just (String args) <- [KM.lookup "arguments" oi]
+  ]
