@@ -1,6 +1,6 @@
 import Data.List (isInfixOf)
 import Distribution.Simple
-import System.Directory (copyFile, createDirectoryIfMissing, doesFileExist, getPermissions, setOwnerExecutable, setPermissions)
+import System.Directory (copyFile, createDirectoryIfMissing, doesDirectoryExist, doesFileExist, getPermissions, setOwnerExecutable, setPermissions)
 import System.FilePath ((</>))
 import System.IO (hPutStrLn, stderr)
 
@@ -20,8 +20,11 @@ installGitHooks = do
       targetHook = ".git" </> "hooks" </> "pre-push"
 
   sourceExists <- doesFileExist sourceHook
-  if not sourceExists
-    then hPutStrLn stderr "⚠️  .git-hooks/pre-push not found, skipping hook installation"
+  -- In a git worktree, .git is a file pointing at the real git dir; hooks are
+  -- shared with the main checkout, so there is nothing to install here.
+  gitIsDirectory <- doesDirectoryExist ".git"
+  if not (sourceExists && gitIsDirectory)
+    then hPutStrLn stderr "⚠️  .git-hooks/pre-push or .git/ not found (worktree?), skipping hook installation"
     else do
       -- Make source hook executable first
       sourcePerms <- getPermissions sourceHook
