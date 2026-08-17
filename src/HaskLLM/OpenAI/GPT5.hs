@@ -20,12 +20,23 @@ module HaskLLM.OpenAI.GPT5 (
 
   -- * Provider tag for OpenAI
   OpenAI (..),
+
+  -- * Native tool calling
+  ToolSpec (..),
+  Tool (..),
+  ToolInvocation (..),
+  ToolChatResult (..),
+  LLMToolChat (..),
+  respondTools,
+  defaultMaxToolRounds,
+  runToolLoop,
 )
 where
 
 import Control.Exception (SomeException, catch)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Aeson (
+  FromJSON,
   Value (..),
   eitherDecode,
   encode,
@@ -69,6 +80,16 @@ import HaskLLM (
   RequestConfig (..),
   TokenUsage (..),
   defaultRequestConfig,
+ )
+import HaskLLM.Tools (
+  LLMToolChat (..),
+  Tool (..),
+  ToolChatResult (..),
+  ToolInvocation (..),
+  ToolSpec (..),
+  aggregateUsage,
+  defaultMaxToolRounds,
+  respondTools,
  )
 
 -- | Provider tag for OpenAI GPT‑5 (Responses API).
@@ -324,3 +345,153 @@ lookupNestedInt _ _ = Nothing
 
 fromTextKey :: Text -> K.Key
 fromTextKey = K.fromText
+
+--------------------------------------------------------------------------------
+-- Native tool calling (Responses API function calling)
+
+instance LLMToolChat OpenAI where
+  respondToolsDetailed _ creds modelName msgs tools mMaxTokens maxRounds config =
+    liftIO $ makeToolRequestDetailed creds modelName msgs tools mMaxTokens maxRounds config
+
+-- | Run the tool loop against the live Responses API endpoint.
+makeToolRequestDetailed :: Credentials -> Text -> [ChatMessage] -> [Tool] -> Maybe Int -> Int -> RequestConfig -> IO (LLMResponse ToolChatResult)
+makeToolRequestDetailed (Credentials cred) modelName msgs tools mMaxTokens maxRounds config = do
+  apiKey <- required "openai_api_key" cred
+  manager <- newManager tlsManagerSettings
+  req0 <- parseRequest "https://api.openai.com/v1/responses"
+
+  let maxTokens = fromMaybe 8192 mMaxTokens
+      -- Each HTTP round is retried individually so tool handlers never re-run
+      -- because of a transport failure.
+      transport inputItems = retryWithBackoff (maxRetries config) $ do
+        let body =
+              object
+                [ "model" .= modelName,
+                  "input" .= inputItems,
+                  "tools" .= map toolToValue tools,
+                  "max_output_tokens" .= maxTokens
+                ]
+            req =
+              configureTimeout config $
+                req0
+                  { method = "POST",
+                    requestHeaders =
+                      [ ("Authorization", "Bearer " <> TE.encodeUtf8 apiKey),
+                        ("Content-Type", "application/json")
+                      ],
+                    requestBody = RequestBodyLBS (encode body)
+                  }
+        resp <- httpLbs req manager
+        case eitherDecode (responseBody resp) :: Either String Value of
+          Left e -> fail ("OpenAI: invalid JSON response: " <> e)
+          Right js -> pure js
+
+  (result, usages) <- runToolLoop transport tools (map chatMessageToValue msgs) maxRounds
+  pure
+    LLMResponse
+      { responseContent = result,
+        responseUsage = aggregateUsage usages,
+        responseModel = modelName,
+        responseProvider = "openai"
+      }
+
+-- | Serialize a 'Tool' for the Responses API @tools@ array.
+toolToValue :: Tool -> Value
+toolToValue (Tool spec _) =
+  object
+    [ "type" .= ("function" :: Text),
+      "name" .= toolName spec,
+      "description" .= toolDescription spec,
+      "parameters" .= toolSchema spec,
+      "strict" .= toolStrict spec
+    ]
+
+-- | A @function_call@ item extracted from a Responses API response.
+data FunctionCall = FunctionCall
+  { -- | Raw output item, echoed back into the next request's input.
+    fcItem :: Value,
+    fcCallId :: Text,
+    fcName :: Text,
+    fcArguments :: Text
+  }
+
+-- | The request\/execute\/feed-back loop, parameterized by transport so it can
+--   be tested without the network. Takes Responses-API input items and returns
+--   the final result plus per-round token usage.
+runToolLoop ::
+  -- | Transport: input items -> raw Responses API response
+  ([Value] -> IO Value) ->
+  [Tool] ->
+  -- | Initial input items (e.g. from 'chatMessageToValue')
+  [Value] ->
+  -- | Max rounds before giving up
+  Int ->
+  IO (ToolChatResult, [TokenUsage])
+runToolLoop transport tools initialItems maxRounds = go initialItems [] [] maxRounds
+ where
+  go items invocations usages roundsLeft
+    | roundsLeft <= 0 =
+        fail ("OpenAI: tool loop did not converge within " <> show maxRounds <> " rounds")
+    | otherwise = do
+        js <- transport items
+        let usages' = usages <> maybe [] pure (extractResponsesUsage js)
+        case extractFunctionCalls js of
+          [] ->
+            pure
+              ( ToolChatResult
+                  { finalText = extractResponsesText js,
+                    toolTrace = invocations
+                  },
+                usages'
+              )
+          calls -> do
+            newInvocations <- mapM (dispatchToolCall tools) calls
+            let feedback =
+                  concat
+                    [ [fcItem call, functionCallOutput (fcCallId call) (invokedOutput inv)]
+                    | (call, inv) <- zip calls newInvocations
+                    ]
+            go (items <> feedback) (invocations <> newInvocations) usages' (roundsLeft - 1)
+
+-- | Execute one model-requested tool call. Unknown tools and unparseable
+--   arguments produce an error string that is fed back to the model so it can
+--   self-correct; exceptions from the handler itself propagate.
+dispatchToolCall :: [Tool] -> FunctionCall -> IO ToolInvocation
+dispatchToolCall tools call = do
+  output <- case [t | t@(Tool spec _) <- tools, toolName spec == fcName call] of
+    [] -> pure ("Error: unknown tool: " <> fcName call)
+    (Tool _ handler : _) -> runHandler handler
+  pure
+    ToolInvocation
+      { invokedName = fcName call,
+        invokedArguments = fcArguments call,
+        invokedOutput = output
+      }
+ where
+  runHandler :: (FromJSON a) => (a -> IO Text) -> IO Text
+  runHandler handler =
+    case eitherDecode (LBS.fromStrict (TE.encodeUtf8 (fcArguments call))) of
+      Left e -> pure ("Error: invalid arguments for " <> fcName call <> ": " <> T.pack e)
+      Right args -> handler args
+
+-- | Build a @function_call_output@ input item.
+functionCallOutput :: Text -> Text -> Value
+functionCallOutput callId output =
+  object
+    [ "type" .= ("function_call_output" :: Text),
+      "call_id" .= callId,
+      "output" .= output
+    ]
+
+-- | Extract @function_call@ items from a Responses API response.
+extractFunctionCalls :: Value -> [FunctionCall]
+extractFunctionCalls (Object o)
+  | Just (Array arr) <- KM.lookup "output" o =
+      [ FunctionCall v callId nm args
+      | v@(Object oi) <- toList arr,
+        Just (String "function_call") <- [KM.lookup "type" oi],
+        Just (String callId) <- [KM.lookup "call_id" oi],
+        Just (String nm) <- [KM.lookup "name" oi],
+        Just (String args) <- [KM.lookup "arguments" oi]
+      ]
+extractFunctionCalls _ = []

@@ -12,7 +12,7 @@ import Data.Default (def)
 import Data.Foldable (forM_)
 import Data.Map.Strict qualified as M
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe)
+import Data.Maybe (fromMaybe, isJust)
 import Data.Scientific (toBoundedInteger)
 import Data.Text (Text)
 import Data.Text qualified as T
@@ -42,6 +42,8 @@ import HaskLLM (
   Credentials (..),
   JSONSchemaSpec (..),
   LLMFormatChat (..),
+  LLMResponse (..),
+  defaultRequestConfig,
  )
 import HaskLLM.OpenAI.GPT5 (
   OpenAI (..),
@@ -50,12 +52,21 @@ import HaskLLM.PandocChat (
   applyEditsToBodies,
   respondPandocChatWithTokens,
  )
+import HaskLLM.Tools (
+  LLMToolChat (..),
+  Tool (..),
+  ToolChatResult (..),
+  ToolInvocation (..),
+  ToolSpec (..),
+  defaultMaxToolRounds,
+ )
 import LogUtils (
   logDebug,
   logInfo,
   withLogSection,
  )
 import QwenIntegrationTest qualified
+import ToolLoopTest qualified
 
 --------------------------------------------------------------------------------
 -- Configuration
@@ -805,12 +816,39 @@ testPandocChatEdits creds = do
       logInfo $ "Saved: " <> T.pack outFile
 
 --------------------------------------------------------------------------------
+-- Native tool calling
+
+newtype PartLookupArgs = PartLookupArgs Text
+
+instance FromJSON PartLookupArgs where
+  parseJSON = withObject "PartLookupArgs" $ \o -> PartLookupArgs <$> o .: "part_id"
+
+-- | A deterministic lookup the model cannot answer without calling the tool.
+partCountTool :: Tool
+partCountTool =
+  Tool
+    ToolSpec
+      { toolName = "lookup_part_count",
+        toolDescription = "Look up the number of units currently in stock for a part id.",
+        toolSchema =
+          object
+            [ "type" .= ("object" :: Text),
+              "properties" .= object ["part_id" .= object ["type" .= ("string" :: Text)]],
+              "required" .= (["part_id"] :: [Text]),
+              "additionalProperties" .= False
+            ],
+        toolStrict = True
+      }
+    (\(PartLookupArgs pid) -> pure (if pid == "AX-9" then "742" else "0"))
+
+--------------------------------------------------------------------------------
 -- HSpec
 
 main :: IO ()
 main = hspec $ do
   -- Run tests that don't need API keys first
   FallbackTest.spec
+  ToolLoopTest.spec
 
   -- Integration tests (need API keys)
   QwenIntegrationTest.spec
@@ -862,6 +900,34 @@ main = hspec $ do
         Just key' -> do
           let creds = Credentials (M.fromList [("openai_api_key", T.pack key')])
           testPandocChatEdits creds
+
+  describe "OpenAI native tool calling" $ do
+    it "calls the provided tool and uses its result in the final answer" $ do
+      mKey <- lookupEnv "OPENAI_API_KEY"
+      case mKey of
+        Nothing -> expectationFailure "OPENAI_API_KEY is not set in environment"
+        Just key' -> do
+          let creds = Credentials (M.fromList [("openai_api_key", T.pack key')])
+          resp <-
+            respondToolsDetailed
+              OpenAI
+              creds
+              modelName
+              [ ChatMessage "system" "Use the provided tools to answer questions about inventory.",
+                ChatMessage "user" "How many units of part AX-9 are in stock? Use the lookup_part_count tool and reply with just the number."
+              ]
+              [partCountTool]
+              Nothing
+              defaultMaxToolRounds
+              defaultRequestConfig
+          let result = responseContent resp
+          withLogSection "Tool calling" $ do
+            logInfo $ "Final text: " <> finalText result
+            forM_ (toolTrace result) $ \inv ->
+              logInfo $ "Tool call: " <> invokedName inv <> " " <> invokedArguments inv <> " -> " <> invokedOutput inv
+          map invokedName (toolTrace result) `shouldContain` ["lookup_part_count"]
+          finalText result `shouldSatisfy` T.isInfixOf "742"
+          responseUsage resp `shouldSatisfy` isJust
  where
   verdict True = "  ✓"
   verdict False = "  ✗"

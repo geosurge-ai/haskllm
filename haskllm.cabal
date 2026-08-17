@@ -23,6 +23,7 @@ library
     HaskLLM.OpenAI.GPT5
     HaskLLM.PandocChat
     HaskLLM.Phony
+    HaskLLM.Tools
     HaskLLM.VLLM.QweN2_5
 
   hs-source-dirs: src
@@ -64,6 +65,7 @@ test-suite haskllm-test
     FallbackTest
     LogUtils
     QwenIntegrationTest
+    ToolLoopTest
 
   hs-source-dirs: test
   build-depends:
