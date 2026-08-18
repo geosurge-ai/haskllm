@@ -4,6 +4,7 @@
 --   instead of the network.
 module ToolLoopTest (spec) where
 
+import Control.Exception (throwIO)
 import Data.Aeson (FromJSON (..), Value, object, withObject, (.:), (.=))
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Data.Text (Text)
@@ -18,6 +19,7 @@ import HaskLLM.OpenAI.GPT5 (
   ToolSpec (..),
   runToolLoop,
  )
+import HaskLLM.OpenAI.Retry (OpenAIHttpError (..), retryOpenAIRequest)
 import HaskLLM.Tools (aggregateUsage)
 
 --------------------------------------------------------------------------------
@@ -28,26 +30,27 @@ data AddArgs = AddArgs Int Int
 instance FromJSON AddArgs where
   parseJSON = withObject "AddArgs" $ \o -> AddArgs <$> o .: "x" <*> o .: "y"
 
+addToolSpec :: ToolSpec AddArgs
+addToolSpec =
+  ToolSpec
+    { toolName = "add",
+      toolDescription = "Add two integers",
+      toolSchema =
+        object
+          [ "type" .= ("object" :: Text),
+            "properties"
+              .= object
+                [ "x" .= object ["type" .= ("integer" :: Text)],
+                  "y" .= object ["type" .= ("integer" :: Text)]
+                ],
+            "required" .= (["x", "y"] :: [Text]),
+            "additionalProperties" .= False
+          ],
+      toolStrict = True
+    }
+
 addTool :: Tool
-addTool =
-  Tool
-    ToolSpec
-      { toolName = "add",
-        toolDescription = "Add two integers",
-        toolSchema =
-          object
-            [ "type" .= ("object" :: Text),
-              "properties"
-                .= object
-                  [ "x" .= object ["type" .= ("integer" :: Text)],
-                    "y" .= object ["type" .= ("integer" :: Text)]
-                  ],
-              "required" .= (["x", "y"] :: [Text]),
-              "additionalProperties" .= False
-            ],
-        toolStrict = True
-      }
-    (\(AddArgs x y) -> pure (T.pack (show (x + y))))
+addTool = Tool addToolSpec (\(AddArgs x y) -> pure (T.pack (show (x + y))))
 
 --------------------------------------------------------------------------------
 -- Scripted Responses-API payloads
@@ -161,6 +164,26 @@ spec = describe "OpenAI tool loop (scripted transport)" $ do
     map invokedOutput (toolTrace result) `shouldBe` ["3", "7"]
     inputs <- readIORef seen
     inputs !! 1 `shouldBe` [c1, c2, outputItem "c1" "3", outputItem "c2" "7"]
+
+  it "does not replay a tool handler when its follow-up request retries" $ do
+    handlerCalls <- newIORef (0 :: Int)
+    attempts <- newIORef (0 :: Int)
+    let countedAddTool = Tool addToolSpec $ \(AddArgs x y) -> do
+          modifyIORef' handlerCalls (+ 1)
+          pure $ T.pack $ show $ x + y
+        transport _ = retryOpenAIRequest 1 $ do
+          modifyIORef' attempts (+ 1)
+          attempt <- readIORef attempts
+          case attempt of
+            1 -> pure $ callResponse [callItem "c1" "add" "{\"x\":2,\"y\":3}"]
+            2 -> throwIO $ OpenAIHttpError 503 mempty
+            _ -> pure $ textResponse "done"
+
+    result <- fst <$> runToolLoop transport [countedAddTool] [] 5
+
+    finalText result `shouldBe` "done"
+    readIORef handlerCalls `shouldReturn` 1
+    readIORef attempts `shouldReturn` 3
 
   it "feeds unknown-tool errors back to the model" $ do
     (seen, transport) <- mkTransport [callResponse [callItem "c1" "bogus" "{}"], textResponse "recovered"]

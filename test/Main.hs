@@ -65,6 +65,7 @@ import LogUtils (
   logInfo,
   withLogSection,
  )
+import OpenAIRetryTest qualified
 import QwenIntegrationTest qualified
 import ToolLoopTest qualified
 
@@ -848,6 +849,7 @@ main :: IO ()
 main = hspec $ do
   -- Run tests that don't need API keys first
   FallbackTest.spec
+  OpenAIRetryTest.spec
   ToolLoopTest.spec
 
   -- Integration tests (need API keys)

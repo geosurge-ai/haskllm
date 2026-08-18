@@ -33,7 +33,6 @@ module HaskLLM.OpenAI.GPT5 (
 )
 where
 
-import Control.Exception (SomeException, catch)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Aeson (
   FromJSON,
@@ -81,6 +80,7 @@ import HaskLLM (
   TokenUsage (..),
   defaultRequestConfig,
  )
+import HaskLLM.OpenAI.Retry (checkOpenAIResponse, retryOpenAIRequest)
 import HaskLLM.Tools (
   LLMToolChat (..),
   Tool (..),
@@ -96,24 +96,7 @@ import HaskLLM.Tools (
 data OpenAI = OpenAI
 
 --------------------------------------------------------------------------------
--- Retry and timeout helpers
-
--- | Retry an IO action with exponential backoff
-retryWithBackoff :: Int -> IO a -> IO a
-retryWithBackoff maxRetries action = go maxRetries (1 :: Int)
- where
-  go 0 _ = action -- Last attempt, don't catch
-  go retriesLeft delay = do
-    result <- catch (Right <$> action) (pure . Left)
-    case result of
-      Right success -> pure success
-      Left (_ :: SomeException) -> do
-        -- Simple backoff: wait delay seconds, then double it
-        if delay <= 8 -- Cap at 8 seconds
-          then do
-            -- In a real implementation, you'd use threadDelay, but for simplicity:
-            go (retriesLeft - 1) (delay * 2)
-          else go (retriesLeft - 1) delay
+-- Timeout helper
 
 -- | Configure timeout for a request based on RequestConfig
 configureTimeout :: RequestConfig -> Request -> Request
@@ -145,33 +128,25 @@ instance LLMFormatChat OpenAI where
   -- New configurable methods
   respondTextWithConfig _ creds modelName msgs config =
     liftIO $
-      retryWithBackoff (maxRetries config) $
-        responseContent <$> makeTextRequestDetailed creds modelName msgs Nothing config
+      responseContent <$> makeTextRequestDetailed creds modelName msgs Nothing config
 
   respondJSONWithConfig _ creds modelName msgs schema config =
     liftIO $
-      retryWithBackoff (maxRetries config) $
-        responseContent <$> makeJSONRequestDetailed creds modelName msgs schema Nothing config
+      responseContent <$> makeJSONRequestDetailed creds modelName msgs schema Nothing config
 
   respondTextWithTokensAndConfig _ creds modelName msgs mMaxTokens config =
     liftIO $
-      retryWithBackoff (maxRetries config) $
-        responseContent <$> makeTextRequestDetailed creds modelName msgs mMaxTokens config
+      responseContent <$> makeTextRequestDetailed creds modelName msgs mMaxTokens config
 
   respondJSONWithTokensAndConfig _ creds modelName msgs schema mMaxTokens config =
     liftIO $
-      retryWithBackoff (maxRetries config) $
-        responseContent <$> makeJSONRequestDetailed creds modelName msgs schema mMaxTokens config
+      responseContent <$> makeJSONRequestDetailed creds modelName msgs schema mMaxTokens config
 
   respondTextDetailed _ creds modelName msgs mMaxTokens config =
-    liftIO $
-      retryWithBackoff (maxRetries config) $
-        makeTextRequestDetailed creds modelName msgs mMaxTokens config
+    liftIO $ makeTextRequestDetailed creds modelName msgs mMaxTokens config
 
   respondJSONDetailed _ creds modelName msgs schema mMaxTokens config =
-    liftIO $
-      retryWithBackoff (maxRetries config) $
-        makeJSONRequestDetailed creds modelName msgs schema mMaxTokens config
+    liftIO $ makeJSONRequestDetailed creds modelName msgs schema mMaxTokens config
 
 --------------------------------------------------------------------------------
 -- Helpers
@@ -223,7 +198,9 @@ makeTextRequestDetailed (Credentials cred) modelName msgs mMaxTokens config = do
               requestBody = RequestBodyLBS (encode body)
             }
 
-  resp <- httpLbs req manager
+  resp <-
+    retryOpenAIRequest (maxRetries config) $
+      httpLbs req manager >>= checkOpenAIResponse
   let raw = responseBody resp
 
   case eitherDecode raw :: Either String Value of
@@ -271,7 +248,9 @@ makeJSONRequestDetailed (Credentials cred) modelName msgs (JSONSchemaSpec nm sch
               requestBody = RequestBodyLBS (encode body)
             }
 
-  resp <- httpLbs req manager
+  resp <-
+    retryOpenAIRequest (maxRetries config) $
+      httpLbs req manager >>= checkOpenAIResponse
   let raw = responseBody resp
 
   js <- case eitherDecode raw :: Either String Value of
@@ -363,7 +342,7 @@ makeToolRequestDetailed (Credentials cred) modelName msgs tools mMaxTokens maxRo
   let maxTokens = fromMaybe 8192 mMaxTokens
       -- Each HTTP round is retried individually so tool handlers never re-run
       -- because of a transport failure.
-      transport inputItems = retryWithBackoff (maxRetries config) $ do
+      transport inputItems = do
         let body =
               object
                 [ "model" .= modelName,
@@ -381,7 +360,9 @@ makeToolRequestDetailed (Credentials cred) modelName msgs tools mMaxTokens maxRo
                       ],
                     requestBody = RequestBodyLBS (encode body)
                   }
-        resp <- httpLbs req manager
+        resp <-
+          retryOpenAIRequest (maxRetries config) $
+            httpLbs req manager >>= checkOpenAIResponse
         case eitherDecode (responseBody resp) :: Either String Value of
           Left e -> fail ("OpenAI: invalid JSON response: " <> e)
           Right js -> pure js
