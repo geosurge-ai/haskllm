@@ -23,9 +23,15 @@ library
     HaskLLM.OpenAI.GPT5
     HaskLLM.PandocChat
     HaskLLM.Phony
+    HaskLLM.Tools
     HaskLLM.VLLM.QweN2_5
 
-  hs-source-dirs: src
+  other-modules:
+    HaskLLM.OpenAI.Retry
+
+  hs-source-dirs:
+    src
+    internal
   build-depends:
     aeson,
     base,
@@ -34,6 +40,7 @@ library
     data-default,
     http-client,
     http-client-tls,
+    http-types,
     lens,
     pandoc,
     pandoc-command-simple,
@@ -62,10 +69,15 @@ test-suite haskllm-test
     CardAtomic
     CardPandoc
     FallbackTest
+    HaskLLM.OpenAI.Retry
     LogUtils
+    OpenAIRetryTest
     QwenIntegrationTest
+    ToolLoopTest
 
-  hs-source-dirs: test
+  hs-source-dirs:
+    test
+    internal
   build-depends:
     aeson,
     base,
@@ -76,6 +88,8 @@ test-suite haskllm-test
     filepath,
     haskllm,
     hspec,
+    http-client,
+    http-types,
     lens,
     pandoc,
     pandoc-command-simple,

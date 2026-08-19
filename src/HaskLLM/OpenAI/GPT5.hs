@@ -20,12 +20,22 @@ module HaskLLM.OpenAI.GPT5 (
 
   -- * Provider tag for OpenAI
   OpenAI (..),
+
+  -- * Native tool calling
+  ToolSpec (..),
+  Tool (..),
+  ToolInvocation (..),
+  ToolChatResult (..),
+  LLMToolChat (..),
+  respondTools,
+  defaultMaxToolRounds,
+  runToolLoop,
 )
 where
 
-import Control.Exception (SomeException, catch)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Aeson (
+  FromJSON,
   Value (..),
   eitherDecode,
   encode,
@@ -70,29 +80,23 @@ import HaskLLM (
   TokenUsage (..),
   defaultRequestConfig,
  )
+import HaskLLM.OpenAI.Retry (checkOpenAIResponse, retryOpenAIRequest)
+import HaskLLM.Tools (
+  LLMToolChat (..),
+  Tool (..),
+  ToolChatResult (..),
+  ToolInvocation (..),
+  ToolSpec (..),
+  aggregateUsage,
+  defaultMaxToolRounds,
+  respondTools,
+ )
 
 -- | Provider tag for OpenAI GPT‑5 (Responses API).
 data OpenAI = OpenAI
 
 --------------------------------------------------------------------------------
--- Retry and timeout helpers
-
--- | Retry an IO action with exponential backoff
-retryWithBackoff :: Int -> IO a -> IO a
-retryWithBackoff maxRetries action = go maxRetries (1 :: Int)
- where
-  go 0 _ = action -- Last attempt, don't catch
-  go retriesLeft delay = do
-    result <- catch (Right <$> action) (pure . Left)
-    case result of
-      Right success -> pure success
-      Left (_ :: SomeException) -> do
-        -- Simple backoff: wait delay seconds, then double it
-        if delay <= 8 -- Cap at 8 seconds
-          then do
-            -- In a real implementation, you'd use threadDelay, but for simplicity:
-            go (retriesLeft - 1) (delay * 2)
-          else go (retriesLeft - 1) delay
+-- Timeout helper
 
 -- | Configure timeout for a request based on RequestConfig
 configureTimeout :: RequestConfig -> Request -> Request
@@ -124,33 +128,25 @@ instance LLMFormatChat OpenAI where
   -- New configurable methods
   respondTextWithConfig _ creds modelName msgs config =
     liftIO $
-      retryWithBackoff (maxRetries config) $
-        responseContent <$> makeTextRequestDetailed creds modelName msgs Nothing config
+      responseContent <$> makeTextRequestDetailed creds modelName msgs Nothing config
 
   respondJSONWithConfig _ creds modelName msgs schema config =
     liftIO $
-      retryWithBackoff (maxRetries config) $
-        responseContent <$> makeJSONRequestDetailed creds modelName msgs schema Nothing config
+      responseContent <$> makeJSONRequestDetailed creds modelName msgs schema Nothing config
 
   respondTextWithTokensAndConfig _ creds modelName msgs mMaxTokens config =
     liftIO $
-      retryWithBackoff (maxRetries config) $
-        responseContent <$> makeTextRequestDetailed creds modelName msgs mMaxTokens config
+      responseContent <$> makeTextRequestDetailed creds modelName msgs mMaxTokens config
 
   respondJSONWithTokensAndConfig _ creds modelName msgs schema mMaxTokens config =
     liftIO $
-      retryWithBackoff (maxRetries config) $
-        responseContent <$> makeJSONRequestDetailed creds modelName msgs schema mMaxTokens config
+      responseContent <$> makeJSONRequestDetailed creds modelName msgs schema mMaxTokens config
 
   respondTextDetailed _ creds modelName msgs mMaxTokens config =
-    liftIO $
-      retryWithBackoff (maxRetries config) $
-        makeTextRequestDetailed creds modelName msgs mMaxTokens config
+    liftIO $ makeTextRequestDetailed creds modelName msgs mMaxTokens config
 
   respondJSONDetailed _ creds modelName msgs schema mMaxTokens config =
-    liftIO $
-      retryWithBackoff (maxRetries config) $
-        makeJSONRequestDetailed creds modelName msgs schema mMaxTokens config
+    liftIO $ makeJSONRequestDetailed creds modelName msgs schema mMaxTokens config
 
 --------------------------------------------------------------------------------
 -- Helpers
@@ -202,7 +198,9 @@ makeTextRequestDetailed (Credentials cred) modelName msgs mMaxTokens config = do
               requestBody = RequestBodyLBS (encode body)
             }
 
-  resp <- httpLbs req manager
+  resp <-
+    retryOpenAIRequest (maxRetries config) $
+      httpLbs req manager >>= checkOpenAIResponse
   let raw = responseBody resp
 
   case eitherDecode raw :: Either String Value of
@@ -250,7 +248,9 @@ makeJSONRequestDetailed (Credentials cred) modelName msgs (JSONSchemaSpec nm sch
               requestBody = RequestBodyLBS (encode body)
             }
 
-  resp <- httpLbs req manager
+  resp <-
+    retryOpenAIRequest (maxRetries config) $
+      httpLbs req manager >>= checkOpenAIResponse
   let raw = responseBody resp
 
   js <- case eitherDecode raw :: Either String Value of
@@ -324,3 +324,160 @@ lookupNestedInt _ _ = Nothing
 
 fromTextKey :: Text -> K.Key
 fromTextKey = K.fromText
+
+--------------------------------------------------------------------------------
+-- Native tool calling (Responses API function calling)
+
+instance LLMToolChat OpenAI where
+  respondToolsDetailed _ creds modelName msgs tools mMaxTokens maxRounds config =
+    liftIO $ makeToolRequestDetailed creds modelName msgs tools mMaxTokens maxRounds config
+
+-- | Run the tool loop against the live Responses API endpoint.
+makeToolRequestDetailed :: Credentials -> Text -> [ChatMessage] -> [Tool] -> Maybe Int -> Int -> RequestConfig -> IO (LLMResponse ToolChatResult)
+makeToolRequestDetailed (Credentials cred) modelName msgs tools mMaxTokens maxRounds config = do
+  apiKey <- required "openai_api_key" cred
+  manager <- newManager tlsManagerSettings
+  req0 <- parseRequest "https://api.openai.com/v1/responses"
+
+  let maxTokens = fromMaybe 8192 mMaxTokens
+      -- Each HTTP round is retried individually so tool handlers never re-run
+      -- because of a transport failure.
+      transport inputItems = do
+        let body =
+              object
+                [ "model" .= modelName,
+                  "input" .= inputItems,
+                  "tools" .= map toolToValue tools,
+                  "max_output_tokens" .= maxTokens
+                ]
+            req =
+              configureTimeout config $
+                req0
+                  { method = "POST",
+                    requestHeaders =
+                      [ ("Authorization", "Bearer " <> TE.encodeUtf8 apiKey),
+                        ("Content-Type", "application/json")
+                      ],
+                    requestBody = RequestBodyLBS (encode body)
+                  }
+        resp <-
+          retryOpenAIRequest (maxRetries config) $
+            httpLbs req manager >>= checkOpenAIResponse
+        case eitherDecode (responseBody resp) :: Either String Value of
+          Left e -> fail ("OpenAI: invalid JSON response: " <> e)
+          Right js -> pure js
+
+  (result, usages) <- runToolLoop transport tools (map chatMessageToValue msgs) maxRounds
+  pure
+    LLMResponse
+      { responseContent = result,
+        responseUsage = aggregateUsage usages,
+        responseModel = modelName,
+        responseProvider = "openai"
+      }
+
+-- | Serialize a 'Tool' for the Responses API @tools@ array.
+toolToValue :: Tool -> Value
+toolToValue (Tool spec _) =
+  object
+    [ "type" .= ("function" :: Text),
+      "name" .= toolName spec,
+      "description" .= toolDescription spec,
+      "parameters" .= toolSchema spec,
+      "strict" .= toolStrict spec
+    ]
+
+-- | A @function_call@ item extracted from a Responses API response.
+data FunctionCall = FunctionCall
+  { fcCallId :: Text,
+    fcName :: Text,
+    fcArguments :: Text
+  }
+
+-- | The request\/execute\/feed-back loop, parameterized by transport so it can
+--   be tested without the network. Takes Responses-API input items and returns
+--   the final result plus per-round token usage.
+runToolLoop ::
+  -- | Transport: input items -> raw Responses API response
+  ([Value] -> IO Value) ->
+  [Tool] ->
+  -- | Initial input items (e.g. from 'chatMessageToValue')
+  [Value] ->
+  -- | Max rounds before giving up
+  Int ->
+  IO (ToolChatResult, [TokenUsage])
+runToolLoop transport tools initialItems maxRounds = go initialItems [] [] maxRounds
+ where
+  go items invocations usages roundsLeft
+    | roundsLeft <= 0 =
+        fail ("OpenAI: tool loop did not converge within " <> show maxRounds <> " rounds")
+    | otherwise = do
+        js <- transport items
+        let usages' = usages <> maybe [] pure (extractResponsesUsage js)
+        case extractFunctionCalls js of
+          [] ->
+            pure
+              ( ToolChatResult
+                  { finalText = extractResponsesText js,
+                    toolTrace = invocations
+                  },
+                usages'
+              )
+          calls -> do
+            newInvocations <- mapM (dispatchToolCall tools) calls
+            -- Reasoning models require the complete prior output sequence
+            -- (including reasoning items) when continuing a stateless tool
+            -- turn, so echo every output item back before the tool outputs.
+            let feedback =
+                  extractOutputItems js
+                    <> [ functionCallOutput (fcCallId call) (invokedOutput inv)
+                       | (call, inv) <- zip calls newInvocations
+                       ]
+            go (items <> feedback) (invocations <> newInvocations) usages' (roundsLeft - 1)
+
+-- | Execute one model-requested tool call. Unknown tools and unparseable
+--   arguments produce an error string that is fed back to the model so it can
+--   self-correct; exceptions from the handler itself propagate.
+dispatchToolCall :: [Tool] -> FunctionCall -> IO ToolInvocation
+dispatchToolCall tools call = do
+  output <- case [t | t@(Tool spec _) <- tools, toolName spec == fcName call] of
+    [] -> pure ("Error: unknown tool: " <> fcName call)
+    (Tool _ handler : _) -> runHandler handler
+  pure
+    ToolInvocation
+      { invokedName = fcName call,
+        invokedArguments = fcArguments call,
+        invokedOutput = output
+      }
+ where
+  runHandler :: (FromJSON a) => (a -> IO Text) -> IO Text
+  runHandler handler =
+    case eitherDecode (LBS.fromStrict (TE.encodeUtf8 (fcArguments call))) of
+      Left e -> pure ("Error: invalid arguments for " <> fcName call <> ": " <> T.pack e)
+      Right args -> handler args
+
+-- | Build a @function_call_output@ input item.
+functionCallOutput :: Text -> Text -> Value
+functionCallOutput callId output =
+  object
+    [ "type" .= ("function_call_output" :: Text),
+      "call_id" .= callId,
+      "output" .= output
+    ]
+
+-- | Extract the raw @output@ items from a Responses API response.
+extractOutputItems :: Value -> [Value]
+extractOutputItems (Object o)
+  | Just (Array arr) <- KM.lookup "output" o = toList arr
+extractOutputItems _ = []
+
+-- | Extract @function_call@ items from a Responses API response.
+extractFunctionCalls :: Value -> [FunctionCall]
+extractFunctionCalls js =
+  [ FunctionCall callId nm args
+  | Object oi <- extractOutputItems js,
+    Just (String "function_call") <- [KM.lookup "type" oi],
+    Just (String callId) <- [KM.lookup "call_id" oi],
+    Just (String nm) <- [KM.lookup "name" oi],
+    Just (String args) <- [KM.lookup "arguments" oi]
+  ]
