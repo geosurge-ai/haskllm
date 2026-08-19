@@ -14,3 +14,6 @@ fi
 echo "Running Qwen integration test only..."
 cabal test haskllm-test --test-show-details=direct --test-options='--match "Qwen Integration"'
 
+
+
+
