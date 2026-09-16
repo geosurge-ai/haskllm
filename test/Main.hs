@@ -66,6 +66,7 @@ import LogUtils (
   withLogSection,
  )
 import OpenAIRetryTest qualified
+import OpenRouterTest qualified
 import QwenIntegrationTest qualified
 import ToolLoopTest qualified
 
@@ -853,6 +854,7 @@ main = hspec $ do
   ToolLoopTest.spec
 
   -- Integration tests (need API keys)
+  OpenRouterTest.spec
   QwenIntegrationTest.spec
 
   describe "GPT-5 JSON-forced MTG card generation & evaluation" $ do

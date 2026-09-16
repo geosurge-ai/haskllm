@@ -42,19 +42,14 @@ import Data.Aeson (
   object,
   (.=),
  )
-import Data.Aeson.Key qualified as K
 import Data.Aeson.KeyMap qualified as KM
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (toList)
-import Data.Map.Strict (Map)
-import Data.Map.Strict qualified as M
 import Data.Maybe (fromMaybe)
-import Data.Scientific (toBoundedInteger)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Network.HTTP.Client (
-  Request,
   RequestBody (..),
   httpLbs,
   method,
@@ -63,12 +58,8 @@ import Network.HTTP.Client (
   requestBody,
   requestHeaders,
   responseBody,
-  responseTimeout,
-  responseTimeoutMicro,
-  responseTimeoutNone,
  )
 import Network.HTTP.Client.TLS (tlsManagerSettings)
-import System.Environment (lookupEnv)
 
 import HaskLLM (
   ChatMessage (..),
@@ -80,6 +71,7 @@ import HaskLLM (
   TokenUsage (..),
   defaultRequestConfig,
  )
+import HaskLLM.Internal (configureTimeout, decodeSchemaOutput, lookupInt, lookupNestedInt, required)
 import HaskLLM.OpenAI.Retry (checkOpenAIResponse, retryOpenAIRequest)
 import HaskLLM.Tools (
   LLMToolChat (..),
@@ -94,15 +86,6 @@ import HaskLLM.Tools (
 
 -- | Provider tag for OpenAI GPT‑5 (Responses API).
 data OpenAI = OpenAI
-
---------------------------------------------------------------------------------
--- Timeout helper
-
--- | Configure timeout for a request based on RequestConfig
-configureTimeout :: RequestConfig -> Request -> Request
-configureTimeout config req = case timeoutSeconds config of
-  Nothing -> req {responseTimeout = responseTimeoutNone}
-  Just seconds -> req {responseTimeout = responseTimeoutMicro (seconds * 1000000)}
 
 instance LLMFormatChat OpenAI where
   -- Responses API text output (no schema).
@@ -151,31 +134,10 @@ instance LLMFormatChat OpenAI where
 --------------------------------------------------------------------------------
 -- Helpers
 
--- | Get a required credential, with environment variable fallback.
---   Checks the credentials map first, then falls back to environment variables.
-required :: Text -> Map Text Text -> IO Text
-required k m = case M.lookup k m of
-  Just v -> pure v
-  Nothing -> do
-    -- Map credential keys to environment variable names
-    let envVar = case k of
-          "openai_api_key" -> "OPENAI_API_KEY"
-          _ -> T.unpack k -- Default: use the key name as-is
-    mEnv <- lookupEnv envVar
-    case mEnv of
-      Just val -> pure (T.pack val)
-      Nothing ->
-        fail $
-          "Missing credential key: "
-            <> T.unpack k
-            <> " (not in Credentials map, and environment variable "
-            <> envVar
-            <> " is not set)"
-
 -- | Make a text request with configurable timeout and retries
 makeTextRequestDetailed :: Credentials -> Text -> [ChatMessage] -> Maybe Int -> RequestConfig -> IO (LLMResponse Text)
 makeTextRequestDetailed (Credentials cred) modelName msgs mMaxTokens config = do
-  apiKey <- required "openai_api_key" cred
+  apiKey <- required "openai_api_key" "OPENAI_API_KEY" cred
   manager <- newManager tlsManagerSettings
   req0 <- parseRequest "https://api.openai.com/v1/responses"
 
@@ -217,7 +179,7 @@ makeTextRequestDetailed (Credentials cred) modelName msgs mMaxTokens config = do
 -- | Make a JSON request with configurable timeout and retries
 makeJSONRequestDetailed :: Credentials -> Text -> [ChatMessage] -> JSONSchemaSpec -> Maybe Int -> RequestConfig -> IO (LLMResponse Value)
 makeJSONRequestDetailed (Credentials cred) modelName msgs (JSONSchemaSpec nm sch isStrict) mMaxTokens config = do
-  apiKey <- required "openai_api_key" cred
+  apiKey <- required "openai_api_key" "OPENAI_API_KEY" cred
   manager <- newManager tlsManagerSettings
   req0 <- parseRequest "https://api.openai.com/v1/responses"
 
@@ -257,18 +219,13 @@ makeJSONRequestDetailed (Credentials cred) modelName msgs (JSONSchemaSpec nm sch
     Left e -> fail ("OpenAI: invalid JSON response: " <> e)
     Right ok -> pure ok
 
-  let txt = extractResponsesText js
-
-  case eitherDecode (LBS.fromStrict $ TE.encodeUtf8 txt) :: Either String Value of
-    Right v ->
-      pure $
-        LLMResponse
-          { responseContent = v,
-            responseUsage = extractResponsesUsage js,
-            responseModel = modelName,
-            responseProvider = "openai"
-          }
-    Left e -> fail ("OpenAI: schema-enforced output was not valid JSON: " <> e <> "\nRaw response text: " <> T.unpack txt)
+  decodeSchemaOutput
+    LLMResponse
+      { responseContent = extractResponsesText js,
+        responseUsage = extractResponsesUsage js,
+        responseModel = modelName,
+        responseProvider = "openai"
+      }
 
 -- Convert ChatMessage to JSON Value for API request
 chatMessageToValue :: ChatMessage -> Value
@@ -306,24 +263,10 @@ extractResponsesUsage (Object o)
             outputTokens = lookupInt "output_tokens" usage,
             totalTokens = lookupInt "total_tokens" usage,
             cachedInputTokens = lookupNestedInt ["input_tokens_details", "cached_tokens"] usage,
-            reasoningTokens = lookupNestedInt ["output_tokens_details", "reasoning_tokens"] usage
+            reasoningTokens = lookupNestedInt ["output_tokens_details", "reasoning_tokens"] usage,
+            costUsd = Nothing
           }
 extractResponsesUsage _ = Nothing
-
-lookupInt :: Text -> Value -> Maybe Int
-lookupInt key (Object o) = case KM.lookup (fromTextKey key) o of
-  Just (Number n) -> toBoundedInteger n
-  _ -> Nothing
-lookupInt _ _ = Nothing
-
-lookupNestedInt :: [Text] -> Value -> Maybe Int
-lookupNestedInt [] _ = Nothing
-lookupNestedInt [key] value = lookupInt key value
-lookupNestedInt (key : rest) (Object o) = KM.lookup (fromTextKey key) o >>= lookupNestedInt rest
-lookupNestedInt _ _ = Nothing
-
-fromTextKey :: Text -> K.Key
-fromTextKey = K.fromText
 
 --------------------------------------------------------------------------------
 -- Native tool calling (Responses API function calling)
@@ -335,7 +278,7 @@ instance LLMToolChat OpenAI where
 -- | Run the tool loop against the live Responses API endpoint.
 makeToolRequestDetailed :: Credentials -> Text -> [ChatMessage] -> [Tool] -> Maybe Int -> Int -> RequestConfig -> IO (LLMResponse ToolChatResult)
 makeToolRequestDetailed (Credentials cred) modelName msgs tools mMaxTokens maxRounds config = do
-  apiKey <- required "openai_api_key" cred
+  apiKey <- required "openai_api_key" "OPENAI_API_KEY" cred
   manager <- newManager tlsManagerSettings
   req0 <- parseRequest "https://api.openai.com/v1/responses"
 

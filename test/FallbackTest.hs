@@ -64,7 +64,8 @@ mockUsage =
       outputTokens = Just 5,
       totalTokens = Just 15,
       cachedInputTokens = Nothing,
-      reasoningTokens = Nothing
+      reasoningTokens = Nothing,
+      costUsd = Nothing
     }
 
 --------------------------------------------------------------------------------

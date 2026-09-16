@@ -135,7 +135,8 @@ aggregateUsage us =
         outputTokens = total outputTokens,
         totalTokens = total totalTokens,
         cachedInputTokens = total cachedInputTokens,
-        reasoningTokens = total reasoningTokens
+        reasoningTokens = total reasoningTokens,
+        costUsd = total costUsd
       }
  where
   total field = case mapMaybe field us of

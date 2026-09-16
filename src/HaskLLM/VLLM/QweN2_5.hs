@@ -24,18 +24,11 @@ import Data.Aeson (
   object,
   (.=),
  )
-import Data.Aeson.Key qualified as K
-import Data.Aeson.KeyMap qualified as KM
-import Data.ByteString.Lazy qualified as LBS
-import Data.Foldable (toList)
 import Data.Map.Strict qualified as M
-import Data.Maybe (fromMaybe)
-import Data.Scientific (toBoundedInteger)
 import Data.Text (Text)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Network.HTTP.Client (
-  Request,
   RequestBody (..),
   httpLbs,
   method,
@@ -44,9 +37,6 @@ import Network.HTTP.Client (
   requestBody,
   requestHeaders,
   responseBody,
-  responseTimeout,
-  responseTimeoutMicro,
-  responseTimeoutNone,
  )
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import System.Environment (lookupEnv)
@@ -58,9 +48,9 @@ import HaskLLM (
   LLMFormatChat (..),
   LLMResponse (..),
   RequestConfig (..),
-  TokenUsage (..),
   defaultRequestConfig,
  )
+import HaskLLM.Internal (configureTimeout, decodeSchemaOutput, extractChatContent, extractChatUsage, required)
 
 -- | Provider tag for vLLM/Qwen (OpenAI-compatible server).
 data Qwen = Qwen
@@ -84,12 +74,6 @@ retryWithBackoff maxRetries action = go maxRetries (1 :: Int)
             -- In a real implementation, you'd use threadDelay, but for simplicity:
             go (retriesLeft - 1) (delay * 2)
           else go (retriesLeft - 1) delay
-
--- | Configure timeout for a request based on RequestConfig
-configureTimeout :: RequestConfig -> Request -> Request
-configureTimeout config req = case timeoutSeconds config of
-  Nothing -> req {responseTimeout = responseTimeoutNone}
-  Just seconds -> req {responseTimeout = responseTimeoutMicro (seconds * 1000000)}
 
 instance LLMFormatChat Qwen where
   -- Plain chat (no schema).
@@ -146,37 +130,17 @@ instance LLMFormatChat Qwen where
 --------------------------------------------------------------------------------
 -- Helpers (local)
 
--- | Get a required credential, with environment variable fallback.
---   Checks the credentials map first, then falls back to environment variables.
---   For base_url, uses a default if neither is provided.
-required :: Text -> M.Map Text Text -> IO Text
-required k m = case M.lookup k m of
-  Just v -> pure v
-  Nothing -> do
-    -- Map credential keys to environment variable names
-    let envVar = case k of
-          "api_key" -> "BLOOD_MONEY_API_KEY"
-          "base_url" -> "BLOOD_MONEY_BASE_URL"
-          _ -> T.unpack k -- Default: use the key name as-is
-    mEnv <- lookupEnv envVar
-    case mEnv of
-      Just val -> pure (T.pack val)
-      Nothing -> case k of
-        -- Default base URL for production blood-money infrastructure
-        "base_url" -> pure "https://outland-dev-1.doubling-season.geosurge.ai"
-        _ ->
-          fail $
-            "Missing credential key: "
-              <> T.unpack k
-              <> " (not in Credentials map, and environment variable "
-              <> envVar
-              <> " is not set)"
+-- | Base URL from the map, else the environment, else production blood-money.
+baseUrl :: M.Map Text Text -> IO Text
+baseUrl cred = maybe fromEnv pure (M.lookup "base_url" cred)
+ where
+  fromEnv = maybe "https://outland-dev-1.doubling-season.geosurge.ai" T.pack <$> lookupEnv "BLOOD_MONEY_BASE_URL"
 
 -- | Make a text request with configurable timeout and retries
 makeTextRequestDetailed :: Credentials -> Text -> [ChatMessage] -> Maybe Int -> RequestConfig -> IO (LLMResponse Text)
 makeTextRequestDetailed (Credentials cred) modelName msgs mMaxTokens config = do
-  base <- required "base_url" cred
-  apiKey <- required "api_key" cred
+  base <- baseUrl cred
+  apiKey <- required "api_key" "BLOOD_MONEY_API_KEY" cred
 
   let url = concretizeChatEndpoint base
       body = case mMaxTokens of
@@ -209,10 +173,11 @@ makeTextRequestDetailed (Credentials cred) modelName msgs mMaxTokens config = do
   let raw = responseBody resp
   case eitherDecode raw :: Either String Value of
     Left e -> fail ("vLLM: invalid JSON response: " <> e)
-    Right js ->
+    Right js -> do
+      content <- either (fail . ("vLLM: " <>)) pure (extractChatContent js)
       pure $
         LLMResponse
-          { responseContent = extractChatContent js,
+          { responseContent = content,
             responseUsage = extractChatUsage js,
             responseModel = modelName,
             responseProvider = "vllm"
@@ -221,8 +186,8 @@ makeTextRequestDetailed (Credentials cred) modelName msgs mMaxTokens config = do
 -- | Make a JSON request with configurable timeout and retries
 makeJSONRequestDetailed :: Credentials -> Text -> [ChatMessage] -> JSONSchemaSpec -> Maybe Int -> RequestConfig -> IO (LLMResponse Value)
 makeJSONRequestDetailed (Credentials cred) modelName msgs (JSONSchemaSpec nm sch isStrict) mMaxTokens config = do
-  base <- required "base_url" cred
-  apiKey <- required "api_key" cred
+  base <- baseUrl cred
+  apiKey <- required "api_key" "BLOOD_MONEY_API_KEY" cred
 
   let url = concretizeChatEndpoint base
       responseFormat =
@@ -269,17 +234,14 @@ makeJSONRequestDetailed (Credentials cred) modelName msgs (JSONSchemaSpec nm sch
     Left e -> fail ("vLLM: invalid JSON response: " <> e)
     Right ok -> pure ok
 
-  let txt = stripCodeFence (extractChatContent js)
-  case eitherDecode (LBS.fromStrict $ TE.encodeUtf8 txt) :: Either String Value of
-    Right v ->
-      pure $
-        LLMResponse
-          { responseContent = v,
-            responseUsage = extractChatUsage js,
-            responseModel = modelName,
-            responseProvider = "vllm"
-          }
-    Left e -> fail ("vLLM: schema-enforced output was not valid JSON: " <> e)
+  content <- either (fail . ("vLLM: " <>)) pure (extractChatContent js)
+  decodeSchemaOutput
+    LLMResponse
+      { responseContent = content,
+        responseUsage = extractChatUsage js,
+        responseModel = modelName,
+        responseProvider = "vllm"
+      }
 
 -- | Normalize a base URL into a concrete Chat Completions endpoint.
 --   Handles the /02/ routing for QweN2.5 in the blood-money infrastructure.
@@ -297,48 +259,3 @@ concretizeChatEndpoint base0 =
           if "/02" `T.isSuffixOf` base
             then base <> "/v1/chat/completions" -- Has /02, just add the rest
             else base <> "/02/v1/chat/completions" -- Needs /02/ route
-
--- Extract assistant content from OpenAI-compatible Chat Completions.
-extractChatContent :: Value -> Text
-extractChatContent (Object o)
-  | Just (Array choices) <- KM.lookup "choices" o,
-    (Object firstChoice : _) <- toList choices,
-    Just (Object msg) <- KM.lookup "message" firstChoice,
-    Just (String contentText) <- KM.lookup "content" msg =
-      contentText
-extractChatContent _ = ""
-
--- | Strip markdown code fences (```json ... ``` or ``` ... ```) from LLM output.
---   Qwen sometimes wraps JSON schema responses in code fences despite being asked
---   for raw JSON via response_format.
-stripCodeFence :: Text -> Text
-stripCodeFence t = case T.stripPrefix "```" (T.strip t) of
-  Nothing -> T.strip t
-  Just rest ->
-    let body = T.drop 1 (T.dropWhile (/= '\n') rest)
-     in fromMaybe body $ T.stripSuffix "```" (T.strip body)
-
-extractChatUsage :: Value -> Maybe TokenUsage
-extractChatUsage (Object o)
-  | Just usage <- KM.lookup "usage" o =
-      Just $
-        TokenUsage
-          { inputTokens = lookupInt "prompt_tokens" usage,
-            outputTokens = lookupInt "completion_tokens" usage,
-            totalTokens = lookupInt "total_tokens" usage,
-            cachedInputTokens = lookupNestedInt ["prompt_tokens_details", "cached_tokens"] usage,
-            reasoningTokens = lookupNestedInt ["completion_tokens_details", "reasoning_tokens"] usage
-          }
-extractChatUsage _ = Nothing
-
-lookupInt :: Text -> Value -> Maybe Int
-lookupInt key (Object o) = case KM.lookup (K.fromText key) o of
-  Just (Number n) -> toBoundedInteger n
-  _ -> Nothing
-lookupInt _ _ = Nothing
-
-lookupNestedInt :: [Text] -> Value -> Maybe Int
-lookupNestedInt [] _ = Nothing
-lookupNestedInt [key] value = lookupInt key value
-lookupNestedInt (key : rest) (Object o) = KM.lookup (K.fromText key) o >>= lookupNestedInt rest
-lookupNestedInt _ _ = Nothing

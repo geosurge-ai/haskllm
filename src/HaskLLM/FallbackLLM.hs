@@ -12,7 +12,7 @@
 --   import HaskLLM.VLLM.QweN2_5 (Qwen(..))
 --   import HaskLLM.OpenAI.GPT5 (OpenAI(..))
 --
---   let qwenCreds = Credentials $ M.fromList [("base_url", "https://..."), ("api_key", "..."), ("session_token", "...")]
+--   let qwenCreds = Credentials $ M.fromList [("base_url", "https://..."), ("api_key", "...")]
 --       gpt5Creds = Credentials $ M.fromList [("openai_api_key", "sk-...")]
 --       fallback = FallbackProvider
 --         { primary = ProviderConfig Qwen qwenCreds "Qwen/Qwen2.5-32B-Instruct"
