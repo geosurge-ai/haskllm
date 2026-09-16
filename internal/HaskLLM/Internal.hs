@@ -108,6 +108,7 @@ extractChatUsage (Object o)
             outputTokens = lookupInt "completion_tokens" usage,
             totalTokens = lookupInt "total_tokens" usage,
             cachedInputTokens = lookupNestedInt ["prompt_tokens_details", "cached_tokens"] usage,
+            cacheWriteTokens = Nothing,
             reasoningTokens = lookupNestedInt ["completion_tokens_details", "reasoning_tokens"] usage,
             costUsd = toRealFloat <$> lookupNumber "cost" usage
           }

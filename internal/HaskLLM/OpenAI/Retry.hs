@@ -9,9 +9,7 @@ where
 import Control.Concurrent (threadDelay)
 import Control.Exception (
   Exception,
-  SomeAsyncException,
   SomeException,
-  catch,
   fromException,
   throwIO,
  )
@@ -25,6 +23,8 @@ import Network.HTTP.Client (
   responseStatus,
  )
 import Network.HTTP.Types.Status (statusCode)
+
+import HaskLLM.Exception (trySync)
 
 data OpenAIHttpError = OpenAIHttpError Int ByteString
   deriving (Show)
@@ -49,15 +49,14 @@ retryOpenAIRequest :: Int -> IO a -> IO a
 retryOpenAIRequest maxRetries action = go (max 0 maxRetries) 1
  where
   go retriesLeft delaySeconds =
-    catch action $ \(exception :: SomeException) ->
-      case fromException exception of
-        Just (_ :: SomeAsyncException) -> throwIO exception
-        Nothing
-          | retriesLeft > 0,
-            isRetryable exception -> do
-              threadDelay (delaySeconds * 1_000_000)
-              go (retriesLeft - 1) (min 30 (delaySeconds * 2))
-          | otherwise -> throwIO exception
+    trySync action >>= \case
+      Right result -> pure result
+      Left exception
+        | retriesLeft > 0,
+          isRetryable exception -> do
+            threadDelay (delaySeconds * 1_000_000)
+            go (retriesLeft - 1) (min 30 (delaySeconds * 2))
+        | otherwise -> throwIO exception
 
 isRetryable :: SomeException -> Bool
 isRetryable exception = case fromException exception of

@@ -43,6 +43,7 @@ import Data.Aeson (
   (.=),
  )
 import Data.Aeson.KeyMap qualified as KM
+import Data.Aeson.Types (Pair)
 import Data.ByteString.Lazy qualified as LBS
 import Data.Foldable (toList)
 import Data.Maybe (fromMaybe)
@@ -51,17 +52,18 @@ import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Network.HTTP.Client (
   RequestBody (..),
+  checkResponse,
   httpLbs,
   method,
   newManager,
   parseRequest,
   requestBody,
   requestHeaders,
-  responseBody,
  )
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 
 import HaskLLM (
+  AttemptObserver,
   ChatMessage (..),
   Credentials (..),
   JSONSchemaSpec (..),
@@ -71,8 +73,13 @@ import HaskLLM (
   TokenUsage (..),
   defaultRequestConfig,
  )
-import HaskLLM.Internal (configureTimeout, decodeSchemaOutput, lookupInt, lookupNestedInt, required)
-import HaskLLM.OpenAI.Retry (checkOpenAIResponse, retryOpenAIRequest)
+import HaskLLM.Internal (configureTimeout, required)
+import HaskLLM.OpenAI.Request (
+  extractResponsesText,
+  extractResponsesUsage,
+  parseJSONContent,
+  requestOpenAI,
+ )
 import HaskLLM.Tools (
   LLMToolChat (..),
   Tool (..),
@@ -84,145 +91,99 @@ import HaskLLM.Tools (
   respondTools,
  )
 
--- | Provider tag for OpenAI GPT‑5 (Responses API).
-data OpenAI = OpenAI
+-- | Responses API provider. The observer follows the provider through Pandoc
+-- calls and fallback chains, without changing their method signatures.
+data OpenAI
+  = OpenAI
+  | OpenAIWithObserver AttemptObserver
 
 instance LLMFormatChat OpenAI where
-  -- Responses API text output (no schema).
-  respondText _ creds modelName msgs =
-    liftIO $
-      responseContent <$> makeTextRequestDetailed creds modelName msgs Nothing defaultRequestConfig
-
-  -- Responses API structured output with JSON schema.
-  respondJSON _ creds modelName msgs schema =
-    liftIO $
-      responseContent <$> makeJSONRequestDetailed creds modelName msgs schema Nothing defaultRequestConfig
-
-  -- Responses API text output with configurable max tokens.
-  respondTextWithTokens _ creds modelName msgs mMaxTokens =
-    liftIO $
-      responseContent <$> makeTextRequestDetailed creds modelName msgs mMaxTokens defaultRequestConfig
-
-  -- Responses API structured output with JSON schema and configurable max tokens.
-  respondJSONWithTokens _ creds modelName msgs schema mMaxTokens =
-    liftIO $
-      responseContent <$> makeJSONRequestDetailed creds modelName msgs schema mMaxTokens defaultRequestConfig
-
-  -- New configurable methods
-  respondTextWithConfig _ creds modelName msgs config =
-    liftIO $
-      responseContent <$> makeTextRequestDetailed creds modelName msgs Nothing config
-
-  respondJSONWithConfig _ creds modelName msgs schema config =
-    liftIO $
-      responseContent <$> makeJSONRequestDetailed creds modelName msgs schema Nothing config
-
-  respondTextWithTokensAndConfig _ creds modelName msgs mMaxTokens config =
-    liftIO $
-      responseContent <$> makeTextRequestDetailed creds modelName msgs mMaxTokens config
-
-  respondJSONWithTokensAndConfig _ creds modelName msgs schema mMaxTokens config =
-    liftIO $
-      responseContent <$> makeJSONRequestDetailed creds modelName msgs schema mMaxTokens config
-
-  respondTextDetailed _ creds modelName msgs mMaxTokens config =
-    liftIO $ makeTextRequestDetailed creds modelName msgs mMaxTokens config
-
-  respondJSONDetailed _ creds modelName msgs schema mMaxTokens config =
-    liftIO $ makeJSONRequestDetailed creds modelName msgs schema mMaxTokens config
+  respondText prov creds modelName msgs =
+    responseContent <$> respondTextDetailed prov creds modelName msgs Nothing defaultRequestConfig
+  respondJSON prov creds modelName msgs schema =
+    responseContent <$> respondJSONDetailed prov creds modelName msgs schema Nothing defaultRequestConfig
+  respondTextWithTokens prov creds modelName msgs tokens =
+    responseContent <$> respondTextDetailed prov creds modelName msgs tokens defaultRequestConfig
+  respondJSONWithTokens prov creds modelName msgs schema tokens =
+    responseContent <$> respondJSONDetailed prov creds modelName msgs schema tokens defaultRequestConfig
+  respondTextWithConfig prov creds modelName msgs config =
+    responseContent <$> respondTextDetailed prov creds modelName msgs Nothing config
+  respondJSONWithConfig prov creds modelName msgs schema config =
+    responseContent <$> respondJSONDetailed prov creds modelName msgs schema Nothing config
+  respondTextWithTokensAndConfig prov creds modelName msgs tokens config =
+    responseContent <$> respondTextDetailed prov creds modelName msgs tokens config
+  respondJSONWithTokensAndConfig prov creds modelName msgs schema tokens config =
+    responseContent <$> respondJSONDetailed prov creds modelName msgs schema tokens config
+  respondTextDetailed prov creds modelName msgs tokens config =
+    liftIO $ makeChatRequestDetailed prov creds modelName msgs [] tokens config
+  respondJSONDetailed prov creds modelName msgs (JSONSchemaSpec name schema strict) tokens config =
+    liftIO do
+      response <-
+        makeChatRequestDetailed
+          prov
+          creds
+          modelName
+          msgs
+          [ "text"
+              .= object
+                [ "format"
+                    .= object
+                      [ "type" .= ("json_schema" :: Text),
+                        "name" .= name,
+                        "schema" .= schema,
+                        "strict" .= strict
+                      ]
+                ]
+          ]
+          tokens
+          config
+      content <- parseJSONContent $ responseContent response
+      pure response {responseContent = content}
 
 --------------------------------------------------------------------------------
 -- Helpers
 
--- | Make a text request with configurable timeout and retries
-makeTextRequestDetailed :: Credentials -> Text -> [ChatMessage] -> Maybe Int -> RequestConfig -> IO (LLMResponse Text)
-makeTextRequestDetailed (Credentials cred) modelName msgs mMaxTokens config = do
+-- | Share request construction and observation across text, JSON and tool calls.
+-- Each tool round uses the same manager and retries only its own HTTP attempt.
+makeTransport :: OpenAI -> Credentials -> Text -> [Pair] -> Maybe Int -> RequestConfig -> IO ([Value] -> IO Value)
+makeTransport prov (Credentials cred) modelName extra mMaxTokens config = do
   apiKey <- required "openai_api_key" "OPENAI_API_KEY" cred
   manager <- newManager tlsManagerSettings
   req0 <- parseRequest "https://api.openai.com/v1/responses"
-
-  let inputMessages = map chatMessageToValue msgs
-      maxTokens = fromMaybe 8192 mMaxTokens
-      body =
-        object
-          [ "model" .= modelName,
-            "input" .= inputMessages,
-            "max_output_tokens" .= maxTokens
-          ]
-      req =
+  let observe = case prov of
+        OpenAI -> const $ pure ()
+        OpenAIWithObserver observer -> observer
+  pure \input ->
+    requestOpenAI observe modelName (maxRetries config) $
+      flip httpLbs manager $
         configureTimeout config $
           req0
             { method = "POST",
+              -- Observe error responses before status handling can discard them.
+              checkResponse = \_ _ -> pure (),
               requestHeaders =
                 [ ("Authorization", "Bearer " <> TE.encodeUtf8 apiKey),
                   ("Content-Type", "application/json")
                 ],
-              requestBody = RequestBodyLBS (encode body)
+              requestBody =
+                RequestBodyLBS $
+                  encode $
+                    object $
+                      [ "model" .= modelName,
+                        "input" .= input,
+                        "max_output_tokens" .= fromMaybe 8192 mMaxTokens
+                      ]
+                        <> extra
             }
 
-  resp <-
-    retryOpenAIRequest (maxRetries config) $
-      httpLbs req manager >>= checkOpenAIResponse
-  let raw = responseBody resp
-
-  case eitherDecode raw :: Either String Value of
-    Left e -> fail ("OpenAI: invalid JSON response: " <> e)
-    Right js ->
-      pure $
-        LLMResponse
-          { responseContent = extractResponsesText js,
-            responseUsage = extractResponsesUsage js,
-            responseModel = modelName,
-            responseProvider = "openai"
-          }
-
--- | Make a JSON request with configurable timeout and retries
-makeJSONRequestDetailed :: Credentials -> Text -> [ChatMessage] -> JSONSchemaSpec -> Maybe Int -> RequestConfig -> IO (LLMResponse Value)
-makeJSONRequestDetailed (Credentials cred) modelName msgs (JSONSchemaSpec nm sch isStrict) mMaxTokens config = do
-  apiKey <- required "openai_api_key" "OPENAI_API_KEY" cred
-  manager <- newManager tlsManagerSettings
-  req0 <- parseRequest "https://api.openai.com/v1/responses"
-
-  let inputMessages = map chatMessageToValue msgs
-      maxTokens = fromMaybe 8192 mMaxTokens
-      textFormat =
-        object
-          [ "type" .= ("json_schema" :: Text),
-            "name" .= nm,
-            "schema" .= sch,
-            "strict" .= isStrict
-          ]
-      body =
-        object
-          [ "model" .= modelName,
-            "input" .= inputMessages,
-            "text" .= object ["format" .= textFormat],
-            "max_output_tokens" .= maxTokens
-          ]
-      req =
-        configureTimeout config $
-          req0
-            { method = "POST",
-              requestHeaders =
-                [ ("Authorization", "Bearer " <> TE.encodeUtf8 apiKey),
-                  ("Content-Type", "application/json")
-                ],
-              requestBody = RequestBodyLBS (encode body)
-            }
-
-  resp <-
-    retryOpenAIRequest (maxRetries config) $
-      httpLbs req manager >>= checkOpenAIResponse
-  let raw = responseBody resp
-
-  js <- case eitherDecode raw :: Either String Value of
-    Left e -> fail ("OpenAI: invalid JSON response: " <> e)
-    Right ok -> pure ok
-
-  decodeSchemaOutput
+makeChatRequestDetailed :: OpenAI -> Credentials -> Text -> [ChatMessage] -> [Pair] -> Maybe Int -> RequestConfig -> IO (LLMResponse Text)
+makeChatRequestDetailed prov creds modelName msgs extra tokens config = do
+  transport <- makeTransport prov creds modelName extra tokens config
+  response <- transport $ map chatMessageToValue msgs
+  pure
     LLMResponse
-      { responseContent = extractResponsesText js,
-        responseUsage = extractResponsesUsage js,
+      { responseContent = extractResponsesText response,
+        responseUsage = extractResponsesUsage response,
         responseModel = modelName,
         responseProvider = "openai"
       }
@@ -235,81 +196,17 @@ chatMessageToValue (ChatMessage role content) =
       "content" .= content
     ]
 
--- OpenAI "Responses API" extraction:
--- Prefer `output_text`; else concatenate `output[].content[].text`.
-extractResponsesText :: Value -> Text
-extractResponsesText (Object o)
-  | Just (String s) <- KM.lookup "output_text" o = s
-  | Just (Array arr) <- KM.lookup "output" o =
-      T.intercalate "\n" $ do
-        v <- toList arr
-        case v of
-          Object oi ->
-            case KM.lookup "content" oi of
-              Just (Array content) ->
-                [ t | Object ci <- toList content, Just (String t) <- [KM.lookup "text" ci]
-                ]
-              _ -> []
-          _ -> []
-  | otherwise = ""
-extractResponsesText _ = ""
-
-extractResponsesUsage :: Value -> Maybe TokenUsage
-extractResponsesUsage (Object o)
-  | Just usage <- KM.lookup "usage" o =
-      Just $
-        TokenUsage
-          { inputTokens = lookupInt "input_tokens" usage,
-            outputTokens = lookupInt "output_tokens" usage,
-            totalTokens = lookupInt "total_tokens" usage,
-            cachedInputTokens = lookupNestedInt ["input_tokens_details", "cached_tokens"] usage,
-            reasoningTokens = lookupNestedInt ["output_tokens_details", "reasoning_tokens"] usage,
-            costUsd = Nothing
-          }
-extractResponsesUsage _ = Nothing
-
 --------------------------------------------------------------------------------
 -- Native tool calling (Responses API function calling)
 
 instance LLMToolChat OpenAI where
-  respondToolsDetailed _ creds modelName msgs tools mMaxTokens maxRounds config =
-    liftIO $ makeToolRequestDetailed creds modelName msgs tools mMaxTokens maxRounds config
+  respondToolsDetailed prov creds modelName msgs tools mMaxTokens maxRounds config =
+    liftIO $ makeToolRequestDetailed prov creds modelName msgs tools mMaxTokens maxRounds config
 
 -- | Run the tool loop against the live Responses API endpoint.
-makeToolRequestDetailed :: Credentials -> Text -> [ChatMessage] -> [Tool] -> Maybe Int -> Int -> RequestConfig -> IO (LLMResponse ToolChatResult)
-makeToolRequestDetailed (Credentials cred) modelName msgs tools mMaxTokens maxRounds config = do
-  apiKey <- required "openai_api_key" "OPENAI_API_KEY" cred
-  manager <- newManager tlsManagerSettings
-  req0 <- parseRequest "https://api.openai.com/v1/responses"
-
-  let maxTokens = fromMaybe 8192 mMaxTokens
-      -- Each HTTP round is retried individually so tool handlers never re-run
-      -- because of a transport failure.
-      transport inputItems = do
-        let body =
-              object
-                [ "model" .= modelName,
-                  "input" .= inputItems,
-                  "tools" .= map toolToValue tools,
-                  "max_output_tokens" .= maxTokens
-                ]
-            req =
-              configureTimeout config $
-                req0
-                  { method = "POST",
-                    requestHeaders =
-                      [ ("Authorization", "Bearer " <> TE.encodeUtf8 apiKey),
-                        ("Content-Type", "application/json")
-                      ],
-                    requestBody = RequestBodyLBS (encode body)
-                  }
-        resp <-
-          retryOpenAIRequest (maxRetries config) $
-            httpLbs req manager >>= checkOpenAIResponse
-        case eitherDecode (responseBody resp) :: Either String Value of
-          Left e -> fail ("OpenAI: invalid JSON response: " <> e)
-          Right js -> pure js
-
+makeToolRequestDetailed :: OpenAI -> Credentials -> Text -> [ChatMessage] -> [Tool] -> Maybe Int -> Int -> RequestConfig -> IO (LLMResponse ToolChatResult)
+makeToolRequestDetailed prov creds modelName msgs tools mMaxTokens maxRounds config = do
+  transport <- makeTransport prov creds modelName ["tools" .= map toolToValue tools] mMaxTokens config
   (result, usages) <- runToolLoop transport tools (map chatMessageToValue msgs) maxRounds
   pure
     LLMResponse
