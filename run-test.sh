@@ -19,5 +19,13 @@ if [ -z "$BLOOD_MONEY_API_KEY" ]; then
     exit 1
 fi
 
+echo "Setting up OpenRouter API key..."
+export OPENROUTER_API_KEY="$(passveil show openrouter.ai/api | head -n 1)"
+
+if [ -z "$OPENROUTER_API_KEY" ]; then
+    echo "Error: Could not retrieve OpenRouter API key from passveil"
+    exit 1
+fi
+
 echo "Running HaskLLM test suite..."
 cabal test haskllm-test --test-show-details=direct

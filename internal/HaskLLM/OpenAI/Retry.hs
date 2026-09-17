@@ -6,6 +6,7 @@ module HaskLLM.OpenAI.Retry (
 )
 where
 
+import Control.Concurrent (threadDelay)
 import Control.Exception (
   Exception,
   SomeAsyncException,
@@ -43,17 +44,19 @@ checkOpenAIStatus code body
         OpenAIHttpError code $
           LBS.take 4096 body
 
+-- ponytail: fixed 1s/2s/4s backoff capped at 30s, honour Retry-After once 429s show up in logs.
 retryOpenAIRequest :: Int -> IO a -> IO a
-retryOpenAIRequest maxRetries action = go $ max 0 maxRetries
+retryOpenAIRequest maxRetries action = go (max 0 maxRetries) 1
  where
-  go retriesLeft =
+  go retriesLeft delaySeconds =
     catch action $ \(exception :: SomeException) ->
       case fromException exception of
         Just (_ :: SomeAsyncException) -> throwIO exception
         Nothing
           | retriesLeft > 0,
-            isRetryable exception ->
-              go $ retriesLeft - 1
+            isRetryable exception -> do
+              threadDelay (delaySeconds * 1_000_000)
+              go (retriesLeft - 1) (min 30 (delaySeconds * 2))
           | otherwise -> throwIO exception
 
 isRetryable :: SomeException -> Bool
@@ -66,4 +69,4 @@ isRetryable exception = case fromException exception of
     Nothing -> False
 
 isRetryableStatus :: Int -> Bool
-isRetryableStatus code = code == 429 || code >= 500 && code < 600
+isRetryableStatus code = code == 408 || code == 429 || code >= 500 && code < 600

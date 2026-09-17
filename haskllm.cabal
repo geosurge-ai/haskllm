@@ -2,7 +2,7 @@ cabal-version: 3.8
 name: haskllm
 version: 0.2.0.0
 synopsis: Haskell LLM client library
-description: A Haskell library for interacting with LLM providers including OpenAI GPT-5 and vLLM/Qwen
+description: A Haskell library for interacting with LLM providers including OpenAI GPT-5, OpenRouter and vLLM/Qwen
 license: MIT
 author: Jons Mostovojs
 maintainer: jons@geosurge.ai
@@ -21,19 +21,21 @@ library
     HaskLLM
     HaskLLM.FallbackLLM
     HaskLLM.OpenAI.GPT5
+    HaskLLM.OpenRouter
     HaskLLM.PandocChat
     HaskLLM.Phony
     HaskLLM.Tools
     HaskLLM.VLLM.QweN2_5
 
   other-modules:
+    HaskLLM.Internal
     HaskLLM.OpenAI.Retry
 
   hs-source-dirs:
     src
     internal
   build-depends:
-    aeson,
+    aeson >=2.2.1,
     base,
     bytestring,
     containers,
@@ -69,9 +71,11 @@ test-suite haskllm-test
     CardAtomic
     CardPandoc
     FallbackTest
+    HaskLLM.Internal
     HaskLLM.OpenAI.Retry
     LogUtils
     OpenAIRetryTest
+    OpenRouterTest
     QwenIntegrationTest
     ToolLoopTest
 
@@ -79,7 +83,7 @@ test-suite haskllm-test
     test
     internal
   build-depends:
-    aeson,
+    aeson >=2.2.1,
     base,
     bytestring,
     containers,

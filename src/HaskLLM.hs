@@ -22,7 +22,8 @@ import GHC.Generics (Generic)
 -- | Simple credential bag.
 --   Required keys:
 --     - OpenAI GPT‑5:      "openai_api_key"
---     - vLLM / Qwen:       "base_url", "api_key", "session_token"
+--     - vLLM / Qwen:       "base_url", "api_key"
+--     - OpenRouter:        "openrouter_api_key"
 newtype Credentials = Credentials (Map Text Text)
   deriving (Show, Generic)
 
@@ -68,15 +69,15 @@ data JSONSchemaSpec = JSONSchemaSpec
 
 -- | Normalized provider-reported token usage.
 --
--- Providers do not always return all fields, so every field is optional. This
--- type intentionally avoids price information; consumers can apply their own
--- pricing policy upstream.
+-- Providers do not always return all fields, so every field is optional.
+-- No pricing is computed here: 'costUsd' is only what the provider itself billed.
 data TokenUsage = TokenUsage
   { inputTokens :: Maybe Int,
     outputTokens :: Maybe Int,
     totalTokens :: Maybe Int,
     cachedInputTokens :: Maybe Int,
-    reasoningTokens :: Maybe Int
+    reasoningTokens :: Maybe Int,
+    costUsd :: Maybe Double
   }
   deriving (Show, Eq, Generic)
 

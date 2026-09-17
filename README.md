@@ -13,7 +13,10 @@ You will need to set the following environment variables to run tests:
 
 ```
 OPENAI_API_KEY=$(passveil show platform.openai.com/api | head -n 1)
+OPENROUTER_API_KEY=$(passveil show openrouter.ai/api | head -n 1)
 ```
+
+The OpenRouter integration tests are skipped unless `OPENROUTER_API_KEY` is set.
 
 ## Maintainers
 

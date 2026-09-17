@@ -1,5 +1,10 @@
 # Changelog for haskllm
 
+## Unreleased
+
+* **BREAKING:** Added `costUsd` to `TokenUsage`; code that constructs the record must set it
+* Added `HaskLLM.OpenRouter`, a Chat Completions provider that pins hosts via routing preferences and reports `costUsd`
+
 ## 0.2.0.0 -- 2025-01-01
 
 * **BREAKING:** Added new methods to `LLMFormatChat` typeclass requiring implementation in custom providers
