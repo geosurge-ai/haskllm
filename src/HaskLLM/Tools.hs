@@ -135,6 +135,7 @@ aggregateUsage us =
         outputTokens = total outputTokens,
         totalTokens = total totalTokens,
         cachedInputTokens = total cachedInputTokens,
+        cacheWriteTokens = total cacheWriteTokens,
         reasoningTokens = total reasoningTokens,
         costUsd = total costUsd
       }

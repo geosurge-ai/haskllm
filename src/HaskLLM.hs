@@ -7,6 +7,9 @@ module HaskLLM (
   JSONSchemaSpec (..),
   RequestConfig (..),
   TokenUsage (..),
+  AttemptObservation (..),
+  AttemptOutcome (..),
+  AttemptObserver,
   LLMResponse (..),
   defaultRequestConfig,
   LLMFormatChat (..),
@@ -72,14 +75,53 @@ data JSONSchemaSpec = JSONSchemaSpec
 -- Providers do not always return all fields, so every field is optional.
 -- No pricing is computed here: 'costUsd' is only what the provider itself billed.
 data TokenUsage = TokenUsage
-  { inputTokens :: Maybe Int,
+  { -- | All input tokens, including cache reads and writes.
+    inputTokens :: Maybe Int,
+    -- | All output tokens, including reasoning tokens.
     outputTokens :: Maybe Int,
+    -- | Provider-reported input plus output total.
     totalTokens :: Maybe Int,
+    -- | Input tokens read from the cache; already included in 'inputTokens'.
     cachedInputTokens :: Maybe Int,
+    -- | Input tokens written to the cache; already included in 'inputTokens'.
+    -- Nothing means unreported, not zero. Cache writes can have their own rate.
+    cacheWriteTokens :: Maybe Int,
+    -- | Reasoning output, already included in 'outputTokens'.
     reasoningTokens :: Maybe Int,
     costUsd :: Maybe Double
   }
   deriving (Show, Eq, Generic)
+
+-- | The transport outcome, not whether the generated content was usable.
+data AttemptOutcome
+  = HTTPResponse Int
+  | TransportFailure Text
+  deriving (Show, Eq, Generic)
+
+-- | One HTTP attempt, observed before status handling or content parsing.
+-- These records overlap with 'responseUsage'; don't charge for both.
+data AttemptObservation = AttemptObservation
+  { -- | Provider responsible for this attempt, including in a fallback chain.
+    attemptProvider :: Text,
+    -- | Returned model identifier, or the requested model if unavailable.
+    attemptModel :: Text,
+    -- | Provider request identifier from the HTTP headers, when received.
+    attemptRequestId :: Maybe Text,
+    -- | Provider response identifier, when the envelope could be decoded.
+    attemptResponseId :: Maybe Text,
+    -- | Provider status (e.g. completed or incomplete), distinct from HTTP status.
+    attemptResponseStatus :: Maybe Text,
+    -- | HTTP status or transport failure; neither establishes billability.
+    attemptOutcome :: AttemptOutcome,
+    -- | Usage reported for this attempt. Missing usage is unknown, not free.
+    attemptUsage :: Maybe TokenUsage
+  }
+  deriving (Show, Eq, Generic)
+
+-- | Synchronous, best-effort accounting hook. Synchronous exceptions are logged
+-- and ignored; cancellation propagates. Keep callbacks short. No delivery is
+-- guaranteed after cancellation or process termination.
+type AttemptObserver = AttemptObservation -> IO ()
 
 -- | A generated response plus normalized metadata from the provider call.
 data LLMResponse a = LLMResponse

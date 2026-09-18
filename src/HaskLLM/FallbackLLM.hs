@@ -64,7 +64,6 @@ module HaskLLM.FallbackLLM (
 )
 where
 
-import Control.Exception (SomeException, catch)
 import Control.Monad.IO.Class (MonadIO (..))
 import Data.Text (Text)
 
@@ -72,6 +71,7 @@ import HaskLLM (
   Credentials,
   LLMFormatChat (..),
  )
+import HaskLLM.Exception (trySync)
 
 -- | Configuration for a single provider with its credentials and model name.
 data ProviderConfig provider = ProviderConfig
@@ -93,10 +93,6 @@ data FallbackProvider p1 p2 = FallbackProvider
     secondary :: ProviderConfig p2
   }
 
--- | Try an IO action and return Nothing on any exception
-tryIO :: IO a -> IO (Maybe a)
-tryIO action = catch (Just <$> action) (\(_ :: SomeException) -> pure Nothing)
-
 -- | Execute fallback logic: try primary, fall back to secondary on failure
 withFallback ::
   (LLMFormatChat p1, LLMFormatChat p2, MonadIO m) =>
@@ -105,10 +101,10 @@ withFallback ::
   (forall p. (LLMFormatChat p) => p -> Credentials -> Text -> IO a) ->
   m a
 withFallback prim sec action = liftIO $ do
-  result <- tryIO (action (provider prim) (credentials prim) (modelName prim))
+  result <- trySync (action (provider prim) (credentials prim) (modelName prim))
   case result of
-    Just r -> pure r
-    Nothing -> action (provider sec) (credentials sec) (modelName sec)
+    Right r -> pure r
+    Left _ -> action (provider sec) (credentials sec) (modelName sec)
 
 instance (LLMFormatChat p1, LLMFormatChat p2) => LLMFormatChat (FallbackProvider p1 p2) where
   respondText (FallbackProvider prim sec) _ _ msgs =

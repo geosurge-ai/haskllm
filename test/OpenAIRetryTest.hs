@@ -21,7 +21,7 @@ spec = describe "OpenAI request retries" $ do
     retryOpenAIRequest 3 request `shouldThrow` (== ThreadKilled)
     readIORef attempts `shouldReturn` 1
 
-  forM_ [429, 503] $ \status ->
+  forM_ [408, 429, 503] $ \status ->
     it ("retries HTTP " <> show status) $ do
       attempts <- newIORef (0 :: Int)
       let request = do
