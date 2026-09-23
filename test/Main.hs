@@ -65,6 +65,7 @@ import LogUtils (
   logInfo,
   withLogSection,
  )
+import OpenAIAccountingTest qualified
 import OpenAIRetryTest qualified
 import OpenRouterTest qualified
 import QwenIntegrationTest qualified
@@ -798,9 +799,7 @@ testPandocChatEdits creds = do
       let outFile = outDir </> "modified.card.json"
       createDirectoryIfMissing True outDir
 
-      let assistantMd = case Map.lookup "assistant" respMap of
-            Nothing -> "(no assistant)"
-            Just d -> pandocToMd d
+      let assistantMd = maybe "(no assistant)" pandocToMd (Map.lookup "assistant" respMap)
 
       LBS.writeFile
         outFile
@@ -851,6 +850,7 @@ main = hspec $ do
   -- Run tests that don't need API keys first
   FallbackTest.spec
   OpenAIRetryTest.spec
+  OpenAIAccountingTest.spec
   ToolLoopTest.spec
 
   -- Integration tests (need API keys)

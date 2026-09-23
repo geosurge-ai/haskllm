@@ -1,9 +1,18 @@
 # Changelog for haskllm
 
-## Unreleased
+## 0.3.0.0 -- 2026-09-15
 
 * **BREAKING:** Added `costUsd` to `TokenUsage`; code that constructs the record must set it
 * Added `HaskLLM.OpenRouter`, a Chat Completions provider that pins hosts via routing preferences and reports `costUsd`
+* **BREAKING:** Added `cacheWriteTokens :: Maybe Int` to `TokenUsage`.
+  Update direct constructors, using `Nothing` when the provider doesn't report it.
+* Preserve OpenAI cache-write counts in text, JSON and tool responses, including
+  aggregation across tool rounds. Input totals already include cache reads/writes.
+* Added `OpenAIWithObserver` for best-effort per-HTTP-attempt accounting, including
+  responses discarded by parsing, retry or tool-loop failures. Observations expose
+  available provider identifiers, status and usage before application processing.
+* Observer failures are logged to stderr without triggering a retry or fallback.
+  Cancellation propagates, including through provider fallback chains.
 
 ## 0.2.0.0 -- 2025-01-01
 
