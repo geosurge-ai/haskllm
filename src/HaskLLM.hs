@@ -13,6 +13,7 @@ module HaskLLM (
   LLMResponse (..),
   defaultRequestConfig,
   LLMFormatChat (..),
+  OpenAIHttpError (..),
 )
 where
 
@@ -21,6 +22,8 @@ import Data.Aeson (ToJSON (..), Value, object, (.=))
 import Data.Map (Map)
 import Data.Text (Text)
 import GHC.Generics (Generic)
+
+import HaskLLM.OpenAI.Retry (OpenAIHttpError (..))
 
 -- | Simple credential bag.
 --   Required keys:
